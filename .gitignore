@@ -1,0 +1,6 @@
+make_bed/*
+make_rsv_mashdb/*
+test/*
+.DS_Store
+.vscode
+resource/doc/*
