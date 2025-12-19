@@ -1,256 +1,274 @@
 #!/bin/bash
+set -euo pipefail  # Exit on error, undefined vars, and pipe failures
 
-set -euo pipefail  # Exit on error, undefined variables, and pipe failures
+# ==========================================================
+# Paths & constants
+# ==========================================================
+readonly prod_prog_base="/nfs/APL_Genomics/apps/production"
+readonly deve_prog_base="/nfs/Genomics_DEV/projects/xdong/deve"
 
-# Global variables
+readonly path_to_viralassembly="${prod_prog_base}/viralassembly"
+readonly path_to_qc_pipeline="${deve_prog_base}/nf-qcflow"
+readonly path_to_covflow="${deve_prog_base}/nf-covflow"
+
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly RSV_PROG_BASE="${SCRIPT_DIR}/.."
-readonly PROG_BASE="/nfs/APL_Genomics/apps/production"
-readonly path_to_qc_pipeline="${PROG_BASE}/qc_pipelines/nf-qc-nanopore"
-readonly path_to_viralassembly="${PROG_BASE}/viralassembly"
-readonly path_to_ampgenomecov="${PROG_BASE}/nf-ampgenomecov"
+readonly VERSION="$(cat "$SCRIPT_DIR/VERSION" 2>/dev/null || echo "unknown")"
+readonly SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
+readonly RSV_SLURM_CONFIG="${RSV_PROG_BASE}/conf/slurm.config"
 readonly ENV_NAME="virus_env"
-readonly RESULTS_DIR="results"
-# Command line argument handling
-usage() {
-    cat << EOF
-Usage: $0 <raw_directory>
+#readonly RESULTS_DIR="results"
 
-Arguments:
-    raw_directory    Path to directory containing raw nanopore data
+# Genome references
+readonly rsvA_ref="${RSV_PROG_BASE}/resource/primerschemes/rsvA/v3/reference.fasta"
+readonly rsvA_bed="${RSV_PROG_BASE}/resource/primerschemes/rsvA/v3/scheme.bed"
+readonly rsvB_ref="${RSV_PROG_BASE}/resource/primerschemes/rsvB/v3/reference.fasta"
+readonly rsvB_bed="${RSV_PROG_BASE}/resource/primerschemes/rsvB/v3/scheme.bed"
+readonly MASH_DB="${RSV_PROG_BASE}/resource/db/mash_screen/sequences.msh"
+
+# Viralassembly config (default + override)
+DEFAULT_QCFLOW_CONFIG_FILE="${RSV_PROG_BASE}/conf/qcflow.config"
+QCFLOW_CONFIG_FILE="$DEFAULT_QCFLOW_CONFIG_FILE"
+
+# Viralassembly config (default + override)
+DEFAULT_VIRALASSEMBLY_CONFIG_FILE="${RSV_PROG_BASE}/conf/viralassembly.config"
+VIRALASSEMBLY_CONFIG_FILE="$DEFAULT_VIRALASSEMBLY_CONFIG_FILE"
+
+# ==========================================================
+# Help / Version
+# ==========================================================
+show_version() {
+    echo "$SCRIPT_NAME version $VERSION"
+}
+
+show_help() {
+    cat << EOF
+$SCRIPT_NAME - RSV Nanopore Analysis Pipeline
+
+Usage:
+   $SCRIPT_NAME [options] <samplesheet.csv> <results_dir>
+
+
+Options:
+  --viralassembly-config FILE  Path to config file (default: ${SCRIPT_DIR}/rsv_nanopore.config)
+  -h, --help                   Show this help
+  -v, --version                Show version
 
 Example:
-    $0 /path/to/raw_data
+  $SCRIPT_NAME samplesheet.csv
+  $SCRIPT_NAME samplesheet.csv myresults --viralassembly-config custom.config
+
 EOF
 }
 
-# Check command line arguments
-if [[ $# -ne 1 ]]; then
-    usage
-    exit 1
-fi
+# ==========================================================
+# Argument parsing
+# ==========================================================
+POSITIONAL_ARGS=()
 
-readonly RAW_DIR="$1"
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help) show_help; exit 0 ;;
+        -v|--version) show_version; exit 0 ;;
+        --viralassembly-config)
+            VIRALASSEMBLY_CONFIG_FILE="${2:-}"
+            shift 2
+            ;;
+        --*) echo "Unknown option: $1" >&2; exit 1 ;;
+        *) POSITIONAL_ARGS+=("$1"); shift ;;
+    esac
+done
 
-# Logging function
+set -- "${POSITIONAL_ARGS[@]}"
+[[ $# -eq 2 ]] || { show_help; exit 1; }
+
+readonly INPUT_SAMPLESHEET="$1"
+readonly RESULTS_DIR="$(mkdir -p "$2" && cd "$2" && pwd)"
+
+# ==========================================================
+# Logging & helpers
+# ==========================================================
 log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >&2
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$SCRIPT_NAME-$VERSION] $*" >&2
 }
 
-# Error handling function
 error_exit() {
     log "ERROR: $1"
     exit "${2:-1}"
 }
 
-# Function to check if conda environment exists
-check_conda_env() {
-    local env_name="$1"
-    if conda info --envs | awk -v env="$env_name" '$1 == env {found=1} END {exit !found}'; then
-        log "Environment '$env_name' exists"
-        return 0
-    else
-        return 1
-    fi
-}
-
-# Function to activate conda environment
-activate_env() {
-    local env_name="$1"
-    if [[ "${CONDA_DEFAULT_ENV:-}" != "$env_name" ]]; then
-        log "Activating '$env_name' environment"
-        eval "$(conda shell.bash hook)"
-        conda activate "$env_name" || error_exit "Failed to activate environment '$env_name'"
-    else
-        log "Environment '$env_name' is already active"
-    fi
-}
-
-# Function to run command with logging
 run_cmd() {
     log "Running: $*"
     "$@" || error_exit "Command failed: $*"
 }
 
-
-# Function to check file exists and is not empty
 check_file() {
-    local file="$1"
-    local description="${2:-file}"
-
-    if [[ ! -f "$file" ]]; then
-        error_exit "$description not found: $file"
-    fi
-
-    if [[ ! -s "$file" ]]; then
-        log "WARNING: $description is empty: $file"
-        return 1
-    fi
-
-    return 0
+    [[ -s "$1" ]] || error_exit "File missing or empty: $1"
 }
 
-# Validate raw directory
-if [[ ! -d "$RAW_DIR" ]]; then
-    error_exit "Raw directory does not exist: $RAW_DIR"
-fi
+check_conda_env() {
+    conda info --envs | awk -v e="$1" '$1==e{f=1}END{exit !f}'
+}
 
-# Initialize conda
-eval "$(conda shell.bash hook)" || error_exit "Failed to initialize conda"
+activate_env() {
+    eval "$(conda shell.bash hook)"
+    [[ "${CONDA_DEFAULT_ENV:-}" == "$1" ]] || conda activate "$1"
+}
 
-# Main execution starts here
-log "Starting RSV nanopore analysis pipeline"
-log "Working directory: $(pwd)"
-log "Script directory: $SCRIPT_DIR"
-log "Raw data directory: $RAW_DIR"
+# ==========================================================
+# Validation
+# ==========================================================
+check_file "$INPUT_SAMPLESHEET"
+check_file "$VIRALASSEMBLY_CONFIG_FILE"
 
-# Check conda environment
-if ! check_conda_env "$ENV_NAME"; then
-    error_exit "Environment '$ENV_NAME' does not exist. Create it with:
-    mamba create -n '$ENV_NAME' mash=2.3 seqkit=2.10.1 nextclade=3.16.0 biopython=1.84 nextflow cd-hit=4.8.1 -y"
-fi
+log "Input samplesheet      : $INPUT_SAMPLESHEET"
+log "Results directory      : $RESULTS_DIR"
+log "Viralassembly config file : $VIRALASSEMBLY_CONFIG_FILE"
 
+# ==========================================================
+# Conda
+# ==========================================================
+check_conda_env "$ENV_NAME" || error_exit "Conda env '$ENV_NAME' not found"
 activate_env "$ENV_NAME"
 
-# Create results directory
-mkdir -p "$RESULTS_DIR"
-
-# ==========================================
-# STEP 1: Generate samplesheet
-# ==========================================
-log "=== STEP 1: Generating samplesheet ==="
-
+# ==========================================================
+# STEP 1: Prepare samplesheet
+# ==========================================================
+log "=== STEP 1: Preparing samplesheet ==="
 readonly SAMPLESHEET="$RESULTS_DIR/samplesheet_to_qc.csv"
-if [[ ! -f "$SAMPLESHEET" ]]; then
-    log "Creating samplesheet from raw directory: $RAW_DIR"
-    run_cmd python $SCRIPT_DIR/make_samplesheet.py $RAW_DIR > $SAMPLESHEET
-else
-    log "Samplesheet already exists: $SAMPLESHEET"
-fi
+cp "$INPUT_SAMPLESHEET" "$SAMPLESHEET"
+check_file "$SAMPLESHEET"
 
-check_file "$SAMPLESHEET" "samplesheet"
-
-# ==========================================
-# STEP 2: Quality Control
-# ==========================================
+# ==========================================================
+# STEP 2: QC pipeline
+# ==========================================================
 log "=== STEP 2: Running QC pipeline ==="
-
-run_cmd nextflow ${path_to_qc_pipeline}/main.nf \
-    -profile singularity \
-    --input $SAMPLESHEET \
-    --outdir $RESULTS_DIR/nf-qc-nanopore \
+run_cmd nextflow run "${path_to_qc_pipeline}/main.nf" \
+    -profile singularity,slurm \
+    -c "$QCFLOW_CONFIG_FILE" \
+    --input "$SAMPLESHEET" \
+    --platform nanopore \
+    --outdir "$RESULTS_DIR/nf-qcflow" \
     -resume
 
-# ==========================================
-# STEP 3: RSV A/B Classification
-# ==========================================
+# ==========================================================
+# STEP 3: RSV A/B classification
+# ==========================================================
 log "=== STEP 3: RSV A/B classification ==="
+run_cmd python "$SCRIPT_DIR/screen_rsv_mash.py" \
+    -i "$RESULTS_DIR/nf-qcflow/qcreads" \
+    -d "$MASH_DB" \
+    -o "$RESULTS_DIR"
 
-run_cmd python  ${SCRIPT_DIR}/screen_rsv_mash.py \
-    -i $RESULTS_DIR/nf-qc-nanopore/qc_reads \
-    -d ${RSV_PROG_BASE}/resource/db/mash_screen/sequences.msh \
-    -o $RESULTS_DIR
+# ==========================================================
+# STEP 4: Process virus function
+# ==========================================================
+process_virus() {
+    local virus="$1"
+    local ref="$2"
+    local bed="$3"
 
-# ==========================================
-# STEP 4: Process RSV-A
-# ==========================================
-log "=== STEP 4: Processing RSV-A ==="
+    local ss="$RESULTS_DIR/samplesheet_${virus}.csv"
+    [[ -s "$ss" ]] || { log "No $virus samples found, skipping"; return; }
 
-readonly RSVA_SAMPLESHEET="$RESULTS_DIR/samplesheet_rsvA.csv"
-if check_file "$RSVA_SAMPLESHEET" "RSV-A samplesheet"; then
+    log "=== Processing $virus ==="
 
-    log "Running RSV-A viral assembly"
-    run_cmd nextflow ${path_to_viralassembly}/main.nf \
-        -profile singularity \
-        -c ${SCRIPT_DIR}/rsvA_nanopore.config \
-        --input $RSVA_SAMPLESHEET \
-        --outdir $RESULTS_DIR/rsvA \
+    # Viral assembly
+    run_cmd nextflow run "${path_to_viralassembly}/main.nf" \
+        -profile singularity,slurm \
+        -c "$RSV_SLURM_CONFIG" \
+        -c "$VIRALASSEMBLY_CONFIG_FILE" \
+        --input "$ss" \
+        --outdir "$RESULTS_DIR/$virus" \
+        --scheme "$virus" \
         -resume
 
-    log "Running RSV-A amplicon genome coverage analysis"
+    # Prepare for nf-covflow
+    mkdir -p "$RESULTS_DIR/$virus/bam_to_covflow"
+    cp "$RESULTS_DIR/$virus/bam/"*.primertrimmed.rg.sorted.bam* "$RESULTS_DIR/$virus/bam_to_covflow" || true
 
-    run_cmd nextflow ${path_to_ampgenomecov}/main.nf \
-        -profile singularity \
-        --input $RESULTS_DIR/rsvA/bam \
-        --outdir $RESULTS_DIR/rsvA/nf-ampgenomecov \
-        --primer_bed ${RSV_PROG_BASE}/resource/primerschemes/rsvA/v3/scheme.bed \
-        --ref ${RSV_PROG_BASE}/resource/primerschemes/rsvA/v3/reference.fasta \
+    # Build covflow samplesheet
+    run_cmd python "$SCRIPT_DIR/build_samplesheet_for_covflow.py" \
+        --input_dir "$RESULTS_DIR/$virus/bam_to_covflow" \
+        --ref_fasta "$ref" \
+        --bed_file "$bed" \
+        -o "$RESULTS_DIR/samplesheet_to_covflow_${virus}.csv"
+
+    # Run covflow
+    run_cmd nextflow run "${path_to_covflow}/main.nf" \
+        -profile singularity,slurm \
+        --input "$RESULTS_DIR/samplesheet_to_covflow_${virus}.csv" \
+        --outdir "$RESULTS_DIR/$virus/nf-covflow" \
         -resume
 
-    log "Generating RSV-A consensus statistics"
-    run_cmd python ${SCRIPT_DIR}/consensus_stats.py \
-        $RESULTS_DIR/rsvA/consensus \
-        $RESULTS_DIR/rsvA/consensus/all_consensus_stats.tsv
+    # Consensus stats
+    mkdir -p "$RESULTS_DIR/$virus/consensus"
+    run_cmd python "$SCRIPT_DIR/consensus_stats.py" \
+        "$RESULTS_DIR/$virus/consensus" \
+        "$RESULTS_DIR/$virus/consensus/all_consensus_stats.tsv"
 
-    log "Running RSV-A nextclade analysis"
-    # Check if consensus files exist before running nextclade
-    if ls "$RESULTS_DIR/rsvA/consensus"/*.fasta >/dev/null 2>&1; then
-        run_cmd nextclade run "$RESULTS_DIR/rsvA/consensus"/*.fasta \
-            --input-dataset $RSV_PROG_BASE/resource/db/nextclade/db_rsvA_2025-08-22 \
-            --output-all $RESULTS_DIR/rsvA/nextclade
+    # Nextclade
+    last_char="${virus: -1}"
+    nextclade_db="./nextstrain/rsv/${last_char,,}"
+    run_cmd nextclade dataset get \
+      --name "nextstrain/rsv/${last_char,,}" \
+      --output-dir "$nextclade_db"
+
+    if ls "$RESULTS_DIR/$virus/consensus/"*.fasta >/dev/null 2>&1; then
+        run_cmd nextclade run "$RESULTS_DIR/$virus/consensus/"*.fasta \
+            --input-dataset "$nextclade_db" \
+            --output-all "$RESULTS_DIR/$virus/nextclade"
     else
-        log "WARNING: No RSV-A consensus files found for nextclade analysis"
+        log "WARNING: No $virus consensus FASTA files found for nextclade"
     fi
-else
-    log "No RSV-A samples found, skipping RSV-A processing"
-fi
+}
 
-# ==========================================
-# STEP 5: Process RSV-B
-# ==========================================
-log "=== STEP 5: Processing RSV-B ==="
+process_virus rsvA "$rsvA_ref" "$rsvA_bed"
+process_virus rsvB "$rsvB_ref" "$rsvB_bed"
 
-readonly RSVB_SAMPLESHEET="$RESULTS_DIR/samplesheet_rsvB.csv"
-if check_file "$RSVB_SAMPLESHEET" "RSV-B samplesheet"; then
+# ==========================================================
+# STEP 5: Final report
+# ==========================================================
+log "=== Generating final summary report ==="
+final_report_dir="${RESULTS_DIR}/summary_report"
+mkdir -p "$final_report_dir"
 
-    log "Running RSV-A viral assembly"
-    run_cmd nextflow ${path_to_viralassembly}/main.nf \
-        -profile singularity \
-        -c ${SCRIPT_DIR}/rsvB_nanopore.config \
-        --input $RSVB_SAMPLESHEET \
-        --outdir $RESULTS_DIR/rsvB \
-        -resume
+for virus in rsvA rsvB; do
+    mkdir -p "${final_report_dir}/${virus}"
+    cp "$RESULTS_DIR/samplesheet_${virus}.csv" "${final_report_dir}/"
+    cp "$RESULTS_DIR/$virus/consensus/"* "${final_report_dir}/${virus}/" || true
+    cp "$RESULTS_DIR/$virus/bam/"*.primertrimmed.rg.sorted.bam* "${final_report_dir}/${virus}/" || true
+    cp -r "$RESULTS_DIR/$virus/nextclade" "${final_report_dir}/${virus}/" || true
+    cp -r "$RESULTS_DIR/$virus/nf-covflow/report/"* "${final_report_dir}/${virus}/" || true
+done
 
-    log "Running RSV-B amplicon genome coverage analysis"
+# Copy QC reports
+cp "$RESULTS_DIR/nf-qcflow/report/reads_nanopore.qc_report.csv" "$final_report_dir/" || true
+cp "$RESULTS_DIR/nf-qcflow/report/reads_nanopore.topmatches.csv" "$final_report_dir/" || true
+cp -r "$RESULTS_DIR/mash_screen" "$final_report_dir/" || true
 
-    run_cmd nextflow ${path_to_ampgenomecov}/main.nf \
-        -profile singularity \
-        --input $RESULTS_DIR/rsvB/bam \
-        --outdir $RESULTS_DIR/rsvB/nf-ampgenomecov \
-        --primer_bed ${RSV_PROG_BASE}/resource/primerschemes/rsvB/v3/scheme.bed \
-        --ref ${RSV_PROG_BASE}/resource/primerschemes/rsvB/v3/reference.fasta \
-        -resume
+# Generate master summary
+conda deactivate || true
+cd "$final_report_dir" || error_exit "Failed to cd to $final_report_dir"
+run_cmd python "$SCRIPT_DIR/make_summary_report.py" \
+    --qc reads_nanopore.qc_report.csv \
+    --consensusA rsvA/all_consensus_stats.tsv \
+    --depthA rsvA/chromosome_coverage_depth_summary.tsv \
+    --nextcladeA rsvA/nextclade/nextclade.tsv \
+    --consensusB rsvB/all_consensus_stats.tsv \
+    --depthB rsvB/chromosome_coverage_depth_summary.tsv \
+    --nextcladeB rsvB/nextclade/nextclade.tsv \
+    --samplesheetA ./samplesheet_rsvA.csv \
+    --samplesheetB ./samplesheet_rsvB.csv \
+    --out rsv_master.tsv
 
-    log "Generating RSV-B consensus statistics"
-    run_cmd python ${SCRIPT_DIR}/consensus_stats.py \
-        $RESULTS_DIR/rsvB/consensus \
-        $RESULTS_DIR/rsvB/consensus/all_consensus_stats.tsv
+# ==========================================================
+# Cleanup
+# ==========================================================
 
-    log "Running RSV-B nextclade analysis"
-    # Check if consensus files exist before running nextclade
-    if ls "$RESULTS_DIR/rsvB/consensus"/*.fasta >/dev/null 2>&1; then
-        run_cmd nextclade run "$RESULTS_DIR/rsvB/consensus"/*.fasta \
-            --input-dataset $RSV_PROG_BASE/resource/db/nextclade/db_rsvB_2025-08-22 \
-            --output-all $RESULTS_DIR/rsvB/nextclade
-    else
-        log "WARNING: No RSV-B consensus files found for nextclade analysis"
-    fi
-else
-    log "No RSV-B samples found, skipping RSV-B processing"
-fi
-
-
-
-# ==========================================
-# CLEANUP AND SUMMARY
-# ==========================================
 log "=== PIPELINE COMPLETED SUCCESSFULLY ==="
+log "Pipeline version: $VERSION"
 log "Results directory: $RESULTS_DIR"
 log "Finished at: $(date)"
-
-# Ensure we're not in any conda environment when script ends
-if [[ -n "${CONDA_DEFAULT_ENV:-}" ]]; then
-    conda deactivate
-fi
 
 exit 0

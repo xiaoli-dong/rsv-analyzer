@@ -14,8 +14,8 @@ def find_sample_pairs(fastq_dir):
     for f in files:
         path = os.path.join(fastq_dir, f)
 
-       
-        m = re.match(r'^(S\d+)_', f)
+        pattern = r'^(.*S\d+)_'
+        m = re.match(pattern, f)
         if m:
             sample_key = m.group(1)
         else:
