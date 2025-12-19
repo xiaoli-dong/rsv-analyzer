@@ -152,7 +152,7 @@ echo "=================================================="
 # Run pipeline
 # ==========================================================
 
-PIPELINE="/nfs/Genomics_DEV/projects/xdong/deve/rsv-analyzer/scripts/rsv_illumina_pipeline.sh"
+PIPELINE="/nfs/APL_Genomics/virus_rsv/pipelines/rsv-analyzer/scripts/rsv_illumina_pipeline.sh"
 
 if [[ ! -x "$PIPELINE" ]]; then
     echo "ERROR: Pipeline script not executable: $PIPELINE"

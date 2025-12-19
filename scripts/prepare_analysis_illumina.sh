@@ -95,7 +95,7 @@ mkdir -p "$output_dir/raw_data" || { echo "Error: Failed to create raw_data dire
 
 # Initialize samplesheet
 samplesheet="$output_dir/samplesheet.csv"
-echo "sample,fastq_1,fastq_2" > "$samplesheet"
+echo "sample,fastq_1,fastq_2,long_fastq" > "$samplesheet"
 
 # Main processing loop
 for sample_num in "${sample_array[@]}"; do
@@ -129,11 +129,11 @@ for sample_num in "${sample_array[@]}"; do
   r1_basename=$(basename "$r1_file")
   r2_basename=$(basename "$r2_file")
 
-  
+
   cp "$r1_file" "$output_dir/raw_data/${run}-${r1_basename}" || { echo "Error copying $r1_file to raw_data"; continue; }
   cp "$r2_file" "$output_dir/raw_data/${run}-${r2_basename}" || { echo "Error copying $r2_file to raw_data"; continue; }
 
-  echo "${run}-S${sample_num},./raw_data/${run}-${r1_basename},./raw_data/${run}-${r2_basename}" >> "$samplesheet"
+  echo "${run}-S${sample_num},./raw_data/${run}-${r1_basename},./raw_data/${run}-${r2_basename},NA" >> "$samplesheet"
 done
 
 # Copy any .config files from script directory to output_dir

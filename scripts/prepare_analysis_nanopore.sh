@@ -113,12 +113,12 @@ done
 
 # Generate samplesheet.csv
 cd "$output_dir/raw_data" || { echo "Failed to cd to $output_dir/raw_data"; exit 1; }
-echo "sample,fastq_1,fastq_2" > ../samplesheet.csv
+echo "sample,fastq_1,fastq_2,long_fastq" > ../samplesheet.csv
 
 for file in ${run}-barcode*.fastq.gz; do
   if [[ $file =~ ${run}-barcode([0-9]{2}).fastq.gz ]]; then
     bc="${BASH_REMATCH[1]}"
-    echo "${run}-barcode$bc,./raw_data/${run}-barcode$bc.fastq.gz," >> ../samplesheet.csv
+    echo "${run}-barcode$bc,NA,NA,./raw_data/${run}-barcode$bc.fastq.gz," >> ../samplesheet.csv
   fi
 done
 

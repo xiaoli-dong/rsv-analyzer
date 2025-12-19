@@ -12,3 +12,13 @@ P-value: the probability of observing the number of shared k-mers with the estin
 Query-ID: accession number of the reference
 
 Query-comment: Name of the reference
+
+
+ rsync -avr --exclude=".git*" --exclude="test/*/work" rsv-analyzer/* /nfs/APL_Genomics/virus_rsv/pipelines/rsv-analyzer-0.1.0
+
+  1083  sh ../../pipelines/rsv-analyzer/scripts/prepare_analysis_nanopore.sh -i no_sample_id/20250121_1340_MN24257_FAX86327_7ceba24e/fastq_pass -r 250121_S_N_012 -o rsv-analyzer-0.1.0-test
+ 1104  sh ../../pipelines/rsv-analyzer/scripts/prepare_analysis_nanopore.sh -i no_sample_id/20250116_1514_MN33158_FAX85774_fa3809c1/fastq_pass -r 250116_S_N_012 -o rsv-analyzer-0.1.0-test
+ 1112  sh ../../pipelines/rsv-analyzer/scripts/prepare_analysis_illumina.sh -h
+ 1113  sh ../../pipelines/rsv-analyzer/scripts/prepare_analysis_illumina.sh -i 250116_MN01641_0167_A000H7J3YJ/Alignment_1 -r 250116_S_I_012 -o rsv-analyzer-0.1.0-test
+ 1116  sh ../../pipelines/rsv-analyzer/scripts/prepare_analysis_illumina.sh -i 250116_MN01641_0167_A000H7J3YJ/Alignment_1 -r 250116_S_I_012 -o rsv-analyzer-0.1.0-test -s 1-96
+ 1124  sh ../../pipelines/rsv-analyzer/scripts/prepare_analysis_illumina.sh -i 250115_MN01641_0166_A000H7J3TL/Alignment_1 -r 250115_S_I_012 -o rsv-analyzer-0.1.0-test -s 1-96
