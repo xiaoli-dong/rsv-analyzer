@@ -16,11 +16,7 @@ This pipeline processes RSV samples through multiple stages of analysis, automat
 
 ```mermaid
 flowchart TD
-    Start1([Start Illumina Pipeline]) --> Init1[Initialize Environment<br/>- Set paths & constants<br/>- Parse arguments<br/>- Validate files]
-    
-    Init1 --> Conda1[Activate Conda Environment<br/>virus_env]
-    
-    Conda1 --> Step1[STEP 1: Prepare Samplesheet<br/>Copy input samplesheet]
+    Start1([Start Illumina Pipeline])  --> Step1[STEP 1: Prepare Samplesheet<br/>Copy input samplesheet]
     
     Step1 --> Step2[STEP 2: QC Pipeline<br/>Run nf-qcflow<br/>- Platform: Illumina<br/>- Profile: singularity, slurm]
     
@@ -67,11 +63,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Start2([Start Nanopore Pipeline]) --> Init2[Initialize Environment<br/>- Set paths & constants<br/>- Parse arguments<br/>- Validate files]
-    
-    Init2 --> Conda2[Activate Conda Environment<br/>virus_env]
-    
-    Conda2 --> Step1n[STEP 1: Prepare Samplesheet<br/>Copy input samplesheet]
+    Start2([Start Nanopore Pipeline]) --> Step1n[STEP 1: Prepare Samplesheet<br/>Copy input samplesheet]
     
     Step1n --> Step2n[STEP 2: QC Pipeline<br/>Run nf-qcflow<br/>- Platform: Nanopore<br/>- Profile: singularity, slurm]
     
@@ -121,7 +113,6 @@ flowchart TD
 | **Analysis Pipeline** | nf-core/viralrecon | viralassembly |
 | **Read Type** | Short reads (paired-end) | Long reads (single-end) |
 | **Variant Calling** | iVar + BCFtools | Medaka/Clair3 |
-| **Output Format** | VCF + Consensus FASTA | Consensus FASTA |
 | **BAM Files** | `*.ivar_trim.sorted.bam` | `*.primertrimmed.rg.sorted.bam` |
 | **QC Report** | `reads_illumina.qc_report.csv` | `reads_nanopore.qc_report.csv` |
 
@@ -130,7 +121,6 @@ flowchart TD
 - **Automated QC**: Platform-specific quality control and filtering
 - **RSV Typing**: MASH-based classification into RSV A or RSV B subtypes
 - **Consensus Generation**: High-quality consensus sequence generation
-- **Variant Calling**: Platform-optimized variant detection (Illumina only)
 - **Coverage Analysis**: Detailed per-base coverage statistics
 - **Phylogenetic Classification**: Nextclade-based clade assignment
 - **Comprehensive Reporting**: Unified summary report combining all metrics
@@ -152,13 +142,13 @@ The pipeline requires a conda environment named `virus_env` with necessary Pytho
 
 **Illumina:**
 - [nf-core/viralrecon](https://github.com/nf-core/viralrecon)
-- nf-qcflow (internal QC pipeline)
-- nf-covflow (internal coverage pipeline)
+- [nf-qcflow](https://github.com/xiaoli-dong/nf-qcflow)
+- [nf-covflow](https://github.com/xiaoli-dong/nf-covflow)
 
 **Nanopore:**
-- viralassembly (internal assembly pipeline)
-- nf-qcflow (internal QC pipeline)
-- nf-covflow (internal coverage pipeline)
+- [viralassembly](https://github.com/phac-nml/viralassembly)
+- [nf-qcflow](https://github.com/xiaoli-dong/nf-qcflow)
+- [nf-covflow](https://github.com/xiaoli-dong/nf-covflow)
 
 ## Installation
 
