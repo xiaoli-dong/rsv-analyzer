@@ -157,24 +157,30 @@ process_virus() {
 
     [[ -s "$ss" ]] || { log "No $virus samples found, skipping"; return; }
 
+    viralrecon_outdir="$RESULTS_DIR/$virus/viralrecon"
+
     run_cmd nextflow run "${path_to_viralrecon}/main.nf" \
       -profile singularity,slurm \
       -c "$RSV_SLURM_CONFIG" \
       -c "$VIRALRECON_CONFIG_FILE" \
       --input "$ss" \
-      --outdir "$RESULTS_DIR/$virus" \
+      --outdir "${viralrecon_outdir}" \
       --protocol amplicon \
       --platform illumina \
       --primer_bed "$bed" \
       --fasta "$ref" \
       -resume
 
-    mkdir -p "$RESULTS_DIR/$virus/bam_to_covflow"
-    cp "$RESULTS_DIR/$virus/variants/bowtie2/"*.ivar_trim.sorted.bam* \
-       "$RESULTS_DIR/$virus/bam_to_covflow"
+    run_cmd python "$SCRIPT_DIR/consensus_stats.py" \
+      "${viralrecon_outdir}/variants/ivar/consensus/bcftools/" \
+      "${viralrecon_outdir}/variants/ivar/consensus/bcftools/all_consensus_stats.tsv"
+
+    mkdir -p "${viralrecon_outdir}/bam_to_covflow"
+    cp "${viralrecon_outdir}/variants/bowtie2/"*.ivar_trim.sorted.bam* \
+       "${viralrecon_outdir}/bam_to_covflow"
 
     run_cmd python "$SCRIPT_DIR/build_samplesheet_for_covflow.py" \
-      --input_dir "$RESULTS_DIR/$virus/bam_to_covflow" \
+      --input_dir "${viralrecon_outdir}/bam_to_covflow" \
       --ref_fasta "$ref" \
       --bed_file "$bed" \
       -o "$RESULTS_DIR/samplesheet_to_covflow_${virus}.csv"
@@ -185,10 +191,6 @@ process_virus() {
       --outdir "$RESULTS_DIR/$virus/nf-covflow" \
       -resume
 
-    run_cmd python "$SCRIPT_DIR/consensus_stats.py" \
-      "$RESULTS_DIR/$virus/variants/ivar/consensus/bcftools/" \
-      "$RESULTS_DIR/$virus/variants/ivar/consensus/bcftools/all_consensus_stats.tsv"
-
     last_char="${virus: -1}"
     nextclade_db="./nextstrain/rsv/${last_char,,}"
 
@@ -197,7 +199,7 @@ process_virus() {
       --output-dir "$nextclade_db"
 
     run_cmd nextclade run \
-      "$RESULTS_DIR/$virus/variants/ivar/consensus/bcftools/"*.fa \
+      "$RESULTS_DIR/$virus/viralrecon/variants/ivar/consensus/bcftools/"*.fa \
       --input-dataset "$nextclade_db" \
       --output-all "$RESULTS_DIR/$virus/nextclade"
 }
@@ -214,11 +216,12 @@ mkdir -p "$final_report_dir"
 
 for virus in rsvA rsvB; do
     mkdir -p "$final_report_dir/$virus"
-    cp "$RESULTS_DIR/samplesheet_${virus}.csv" "$final_report_dir/"
-    cp "$RESULTS_DIR/$virus/variants/ivar/consensus/bcftools/"*consensus* "$final_report_dir/$virus/"
-    cp "$RESULTS_DIR/$virus/variants/ivar/consensus/bcftools/"*.filtered.vcf.gz* "$final_report_dir/$virus/"
-    cp "$RESULTS_DIR/$virus/bam_to_covflow/"*.ivar_trim.sorted.bam* "$final_report_dir/$virus/"
-    cp -r "$RESULTS_DIR/$virus/nextclade" "$final_report_dir/$virus/"
+    #cp "$RESULTS_DIR/samplesheet_${virus}.csv" "$final_report_dir/"
+    viralrecon_outdir="$RESULTS_DIR/$virus/viralrecon"
+    cp "${viralrecon_outdir}/variants/ivar/consensus/bcftools/"*consensus* "$final_report_dir/$virus/"
+    cp "${viralrecon_outdir}/variants/ivar/consensus/bcftools/"*.filtered.vcf.gz* "$final_report_dir/$virus/"
+    cp "${viralrecon_outdir}/bam_to_covflow/"*.ivar_trim.sorted.bam* "$final_report_dir/$virus/"
+    cp "$RESULTS_DIR/$virus/nextclade/"* "$final_report_dir/$virus/"
     cp -r "$RESULTS_DIR/$virus/nf-covflow/report/"* "$final_report_dir/$virus/"
 done
 
@@ -236,12 +239,12 @@ run_cmd python "$SCRIPT_DIR/make_summary_report.py" \
   --qc reads_illumina.qc_report.csv \
   --consensusA rsvA/all_consensus_stats.tsv \
   --depthA rsvA/chromosome_coverage_depth_summary.tsv \
-  --nextcladeA rsvA/nextclade/nextclade.tsv \
+  --nextcladeA rsvA/nextclade.tsv \
   --consensusB rsvB/all_consensus_stats.tsv \
   --depthB rsvB/chromosome_coverage_depth_summary.tsv \
-  --nextcladeB rsvB/nextclade/nextclade.tsv \
-  --samplesheetA samplesheet_rsvA.csv \
-  --samplesheetB samplesheet_rsvB.csv \
+  --nextcladeB rsvB/nextclade.tsv \
+  --samplesheetA ../samplesheet_rsvA.csv \
+  --samplesheetB ../samplesheet_rsvB.csv \
   --out rsv_master.tsv
 
 

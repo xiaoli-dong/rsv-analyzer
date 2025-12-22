@@ -171,6 +171,8 @@ process_virus() {
     local ss="$RESULTS_DIR/samplesheet_${virus}.csv"
     [[ -s "$ss" ]] || { log "No $virus samples found, skipping"; return; }
 
+    viralassembly_outdir="$RESULTS_DIR/$virus/viralassembly"
+
     log "=== Processing $virus ==="
 
     # Viral assembly
@@ -179,17 +181,22 @@ process_virus() {
         -c "$RSV_SLURM_CONFIG" \
         -c "$VIRALASSEMBLY_CONFIG_FILE" \
         --input "$ss" \
-        --outdir "$RESULTS_DIR/$virus" \
+        --outdir "${viralassembly_outdir}" \
         --scheme "$virus" \
         -resume
+    # Consensus stats
+    #mkdir -p "$RESULTS_DIR/$virus/consensus"
+    run_cmd python "$SCRIPT_DIR/consensus_stats.py" \
+        "${viralassembly_outdir}/consensus" \
+        "${viralassembly_outdir}/consensus/all_consensus_stats.tsv"
 
     # Prepare for nf-covflow
-    mkdir -p "$RESULTS_DIR/$virus/bam_to_covflow"
-    cp "$RESULTS_DIR/$virus/bam/"*.primertrimmed.rg.sorted.bam* "$RESULTS_DIR/$virus/bam_to_covflow" || true
+    mkdir -p "${viralassembly_outdir}/bam_to_covflow"
+    cp "${viralassembly_outdir}/bam/"*.primertrimmed.rg.sorted.bam* "${viralassembly_outdir}/bam_to_covflow" || true
 
     # Build covflow samplesheet
     run_cmd python "$SCRIPT_DIR/build_samplesheet_for_covflow.py" \
-        --input_dir "$RESULTS_DIR/$virus/bam_to_covflow" \
+        --input_dir "${viralassembly_outdir}/bam_to_covflow" \
         --ref_fasta "$ref" \
         --bed_file "$bed" \
         -o "$RESULTS_DIR/samplesheet_to_covflow_${virus}.csv"
@@ -201,12 +208,6 @@ process_virus() {
         --outdir "$RESULTS_DIR/$virus/nf-covflow" \
         -resume
 
-    # Consensus stats
-    mkdir -p "$RESULTS_DIR/$virus/consensus"
-    run_cmd python "$SCRIPT_DIR/consensus_stats.py" \
-        "$RESULTS_DIR/$virus/consensus" \
-        "$RESULTS_DIR/$virus/consensus/all_consensus_stats.tsv"
-
     # Nextclade
     last_char="${virus: -1}"
     nextclade_db="./nextstrain/rsv/${last_char,,}"
@@ -214,8 +215,8 @@ process_virus() {
       --name "nextstrain/rsv/${last_char,,}" \
       --output-dir "$nextclade_db"
 
-    if ls "$RESULTS_DIR/$virus/consensus/"*.fasta >/dev/null 2>&1; then
-        run_cmd nextclade run "$RESULTS_DIR/$virus/consensus/"*.fasta \
+    if ls "${viralassembly_outdir}/consensus/"*.fasta >/dev/null 2>&1; then
+        run_cmd nextclade run "${viralassembly_outdir}/consensus/"*.fasta \
             --input-dataset "$nextclade_db" \
             --output-all "$RESULTS_DIR/$virus/nextclade"
     else
@@ -235,10 +236,11 @@ mkdir -p "$final_report_dir"
 
 for virus in rsvA rsvB; do
     mkdir -p "${final_report_dir}/${virus}"
-    cp "$RESULTS_DIR/samplesheet_${virus}.csv" "${final_report_dir}/"
-    cp "$RESULTS_DIR/$virus/consensus/"* "${final_report_dir}/${virus}/" || true
-    cp "$RESULTS_DIR/$virus/bam/"*.primertrimmed.rg.sorted.bam* "${final_report_dir}/${virus}/" || true
-    cp -r "$RESULTS_DIR/$virus/nextclade" "${final_report_dir}/${virus}/" || true
+    viralassembly_outdir="$RESULTS_DIR/$virus/viralassembly"
+    #cp "$RESULTS_DIR/samplesheet_${virus}.csv" "${final_report_dir}/"
+    cp "${viralassembly_outdir}/consensus/"* "${final_report_dir}/${virus}/" || true
+    cp "${viralassembly_outdir}/bam/"*.primertrimmed.rg.sorted.bam* "${final_report_dir}/${virus}/" || true
+    cp "$RESULTS_DIR/$virus/nextclade/"* "${final_report_dir}/${virus}/" || true
     cp -r "$RESULTS_DIR/$virus/nf-covflow/report/"* "${final_report_dir}/${virus}/" || true
 done
 
@@ -254,12 +256,12 @@ run_cmd python "$SCRIPT_DIR/make_summary_report.py" \
     --qc reads_nanopore.qc_report.csv \
     --consensusA rsvA/all_consensus_stats.tsv \
     --depthA rsvA/chromosome_coverage_depth_summary.tsv \
-    --nextcladeA rsvA/nextclade/nextclade.tsv \
+    --nextcladeA rsvA/nextclade.tsv \
     --consensusB rsvB/all_consensus_stats.tsv \
     --depthB rsvB/chromosome_coverage_depth_summary.tsv \
-    --nextcladeB rsvB/nextclade/nextclade.tsv \
-    --samplesheetA ./samplesheet_rsvA.csv \
-    --samplesheetB ./samplesheet_rsvB.csv \
+    --nextcladeB rsvB/nextclade.tsv \
+    --samplesheetA ../samplesheet_rsvA.csv \
+    --samplesheetB ../samplesheet_rsvB.csv \
     --out rsv_master.tsv
 
 # ==========================================================
