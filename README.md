@@ -13,96 +13,74 @@ This pipeline processes RSV samples through multiple stages of analysis, automat
 ## Workflows
 
 ### Illumina Workflow
-
 ```mermaid
-flowchart TD
-    Start1([Start Illumina Pipeline])  --> Step1[STEP 1: Prepare Samplesheet<br/>Copy input samplesheet]
-    
-    Step1 --> Step2[STEP 2: QC Pipeline<br/>Run nf-qcflow<br/>- Platform: Illumina<br/>- Profile: singularity, slurm]
-    
-    Step2 --> Step3[STEP 3: RSV A/B Classification<br/>Run screen_rsv_mash.py<br/>- Input: QC reads<br/>- Database: MASH DB]
-    
-    Step3 --> Split1{Split by<br/>RSV Type}
-    
-    Split1 -->|RSV A samples| ProcessA1[STEP 4a: Process RSV A]
-    Split1 -->|RSV B samples| ProcessB1[STEP 4b: Process RSV B]
-    
-    ProcessA1 --> VirA1[Run Viralrecon<br/>- Reference: rsvA/v3<br/>- Primer bed: rsvA scheme<br/>- Protocol: amplicon]
-    
-    ProcessB1 --> VirB1[Run Viralrecon<br/>- Reference: rsvB/v3<br/>- Primer bed: rsvB scheme<br/>- Protocol: amplicon]
-    
-    VirA1 --> StatsA1[Generate Consensus Stats<br/>consensus_stats.py]
-    VirB1 --> StatsB1[Generate Consensus Stats<br/>consensus_stats.py]
-    
-    StatsA1 --> CovA1[Prepare & Run nf-covflow<br/>- Build samplesheet<br/>- Copy BAM files<br/>- Run coverage analysis]
-    StatsB1 --> CovB1[Prepare & Run nf-covflow<br/>- Build samplesheet<br/>- Copy BAM files<br/>- Run coverage analysis]
-    
-    CovA1 --> NextA1[Run Nextclade<br/>Dataset: nextstrain/rsv/a]
-    CovB1 --> NextB1[Run Nextclade<br/>Dataset: nextstrain/rsv/b]
-    
-    NextA1 --> Merge1[STEP 6: Consolidate Results]
-    NextB1 --> Merge1
-    
-    Merge1 --> Copy1[Copy Files to summary_report/<br/>- Consensus sequences<br/>- VCF files<br/>- BAM files<br/>- Nextclade results<br/>- Coverage reports<br/>- QC reports]
-    
-    Copy1 --> Step7[STEP 7: Generate Master Report<br/>make_summary_report.py<br/>- Combine QC, consensus, depth,<br/>and nextclade data<br/>- Output: rsv_master.tsv]
-    
-    Step7 --> End1([Pipeline Complete])
-    
-    style Start1 fill:#e1f5e1
-    style End1 fill:#e1f5e1
+flowchart LR
+ subgraph RSV_Branches["RSV A/B Processing"]
+    direction LR
+        VA["Viralrecon + Consensus"]
+        A["RSV A"]
+        VB["Viralrecon + Consensus"]
+        B["RSV B"]
+        CA["Coverage + Nextclade"]
+        CB["Coverage + Nextclade"]
+        Merge["Consolidate Results"]
+  end
+    Start(["Start Illumina Pipeline"]) --> Step1["Prepare Samplesheet"]
+    Step1 --> Step2["QC<br>nf-qcflow"]
+    Step2 --> Step3["RSV A/B Classification"]
+    A --> VA
+    B --> VB
+    VA --> CA
+    VB --> CB
+    CA --> Merge
+    CB --> Merge
+    Merge --> Copy["Copy to summary_report"]
+    Copy --> Final["Generate Master Report"]
+    Final --> End(["Pipeline Complete"])
+
+    style VA fill:#fce4ec
+    style VB fill:#fce4ec
+    style Start fill:#e1f5e1,stroke:#333
     style Step2 fill:#e3f2fd
     style Step3 fill:#fff3e0
-    style Split1 fill:#f3e5f5
-    style VirA1 fill:#fce4ec
-    style VirB1 fill:#fce4ec
-    style Step7 fill:#e8f5e9
+    style Final fill:#e8f5e9
+    style End fill:#e1f5e1,stroke:#333
+    style RSV_Branches fill:#f3e5f5,stroke:#333
 ```
 
 ### Nanopore Workflow
 
 ```mermaid
-flowchart TD
-    Start2([Start Nanopore Pipeline]) --> Step1n[STEP 1: Prepare Samplesheet<br/>Copy input samplesheet]
-    
-    Step1n --> Step2n[STEP 2: QC Pipeline<br/>Run nf-qcflow<br/>- Platform: Nanopore<br/>- Profile: singularity, slurm]
-    
-    Step2n --> Step3n[STEP 3: RSV A/B Classification<br/>Run screen_rsv_mash.py<br/>- Input: QC reads<br/>- Database: MASH DB]
-    
-    Step3n --> Split2{Split by<br/>RSV Type}
-    
-    Split2 -->|RSV A samples| ProcessA2[STEP 4a: Process RSV A]
-    Split2 -->|RSV B samples| ProcessB2[STEP 4b: Process RSV B]
-    
-    ProcessA2 --> VirA2[Run Viralassembly<br/>- Scheme: rsvA<br/>- Reference: rsvA/v3<br/>- Primer bed: rsvA scheme]
-    
-    ProcessB2 --> VirB2[Run Viralassembly<br/>- Scheme: rsvB<br/>- Reference: rsvB/v3<br/>- Primer bed: rsvB scheme]
-    
-    VirA2 --> StatsA2[Generate Consensus Stats<br/>consensus_stats.py]
-    VirB2 --> StatsB2[Generate Consensus Stats<br/>consensus_stats.py]
-    
-    StatsA2 --> CovA2[Prepare & Run nf-covflow<br/>- Build samplesheet<br/>- Copy BAM files<br/>- Run coverage analysis]
-    StatsB2 --> CovB2[Prepare & Run nf-covflow<br/>- Build samplesheet<br/>- Copy BAM files<br/>- Run coverage analysis]
-    
-    CovA2 --> NextA2[Run Nextclade<br/>Dataset: nextstrain/rsv/a]
-    CovB2 --> NextB2[Run Nextclade<br/>Dataset: nextstrain/rsv/b]
-    
-    NextA2 --> Merge2[STEP 5: Consolidate Results]
-    NextB2 --> Merge2
-    
-    Merge2 --> Copy2[Copy Files to summary_report/<br/>- Consensus sequences<br/>- BAM files<br/>- Nextclade results<br/>- Coverage reports<br/>- QC reports]
-    
-    Copy2 --> Final2[Generate Master Report<br/>make_summary_report.py<br/>- Combine QC, consensus, depth,<br/>and nextclade data<br/>- Output: rsv_master.tsv]
-    
+flowchart LR
+    %% Main Pipeline
+    Start2([Start Nanopore Pipeline]) --> Step1n[Prepare Samplesheet]
+    Step1n --> Step2n[QC <br>nf-qcflow]
+    Step2n --> Step3n[RSV A/B Classification]
+
+    %% RSV A/B Processing Branches
+    subgraph RSV_Branches["RSV A/B Processing"]
+        direction LR
+        A2["RSV A"] --> VA2["Viralassembly + Consensus"]
+        B2["RSV B"] --> VB2["Viralassembly + Consensus"]
+        VA2 --> CA2["Coverage + Nextclade"]
+        VB2 --> CB2["Coverage + Nextclade"]
+        CA2 --> Merge2["Consolidate Results"]
+        CB2 --> Merge2
+    end
+
+    %% Final Steps
+    Merge2 --> Copy2["Copy to summary_report"]
+    Copy2 --> Final2["Generate Master Report"]
     Final2 --> End2([Pipeline Complete])
-    
-    style Start2 fill:#e1f5e1
-    style End2 fill:#e1f5e1
+
+    %% Styling
+    style Start2 fill:#e1f5e1,stroke:#333
+    style End2 fill:#e1f5e1,stroke:#333
     style Step2n fill:#e3f2fd
     style Step3n fill:#fff3e0
-    style Split2 fill:#f3e5f5
-    style VirA2 fill:#ffe4b5
-    style VirB2 fill:#ffe4b5
+    style RSV_Branches fill:#f3e5f5,stroke:#333
+    style VA2 fill:#ffe4b5
+    style VB2 fill:#ffe4b5
     style Final2 fill:#e8f5e9
 ```
 
