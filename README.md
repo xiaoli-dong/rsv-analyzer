@@ -17,8 +17,8 @@ flowchart LR
         A["RSV A"]
         VB["Viralrecon + Consensus"]
         B["RSV B"]
-        CA["Coverage + Nextclade"]
-        CB["Coverage + Nextclade"]
+        CA["Coverage (nf-covflow) + Nextclade"]
+        CB["Coverage (nf-covflow) + Nextclade"]
         Merge["Consolidate Results"]
   end
     Start(["Start Illumina Pipeline"]) --> Step1["Prepare Samplesheet"]
@@ -58,8 +58,8 @@ flowchart LR
         direction LR
         A2["RSV A"] --> VA2["Viralassembly + Consensus"]
         B2["RSV B"] --> VB2["Viralassembly + Consensus"]
-        VA2 --> CA2["Coverage + Nextclade"]
-        VB2 --> CB2["Coverage + Nextclade"]
+        VA2 --> CA2["Coverage (nf-covflow) + Nextclade"]
+        VB2 --> CB2["Coverage (nf-covflow) + Nextclade"]
         CA2 --> Merge2["Consolidate Results"]
         CB2 --> Merge2
     end
