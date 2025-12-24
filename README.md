@@ -105,39 +105,15 @@ flowchart LR
 
 ## Requirements
 
-### Software Dependencies
-
-- Nextflow
-- Conda/Mamba
-- Singularity
-- Python 3.x
-
-### Conda Environment
-
-The pipeline requires a conda environment named `virus_env` with necessary Python dependencies.
+### Software & Environment
+Nextflow, singularity, virus_env conda environment
 
 ### External Pipelines
 
-**Illumina:**
-- [nf-core/viralrecon](https://github.com/nf-core/viralrecon)
-- [nf-qcflow](https://github.com/xiaoli-dong/nf-qcflow)
-- [nf-covflow](https://github.com/xiaoli-dong/nf-covflow)
+| Illumina | Nanopore |
+|----------|----------|
+| [nf-core/viralrecon](https://github.com/nf-core/viralrecon)<br>[nf-qcflow](https://github.com/xiaoli-dong/nf-qcflow)<br>[nf-covflow](https://github.com/xiaoli-dong/nf-covflow) | [viralassembly](https://github.com/phac-nml/viralassembly)<br>[nf-qcflow](https://github.com/xiaoli-dong/nf-qcflow)<br>[nf-covflow](https://github.com/xiaoli-dong/nf-covflow) |
 
-**Nanopore:**
-- [viralassembly](https://github.com/phac-nml/viralassembly)
-- [nf-qcflow](https://github.com/xiaoli-dong/nf-qcflow)
-- [nf-covflow](https://github.com/xiaoli-dong/nf-covflow)
-
-## Installation
-
-```bash
-# Clone the repository
-git clone <repository-url>
-cd rsv-pipeline
-
-# Ensure conda environment is created
-conda env create -f environment.yml
-```
 
 ## Usage
 
