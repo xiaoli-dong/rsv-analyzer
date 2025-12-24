@@ -118,226 +118,146 @@ Nextflow, singularity, virus_env conda environment
 ## Usage
 
 ### Illumina Pipeline
-
-```bash
-# Basic usage
-./bin/rsv_illumina.sh <samplesheet.csv> <results_dir>
-
-# With custom config
-./bin/rsv_illumina.sh --viralrecon-config custom.config samplesheet.csv results/
+**Usage**
 ```
+bash rsv_illumina_pipeline.sh <samplesheet.csv> <results_dir> [options]
+```
+**Required Arguments**
+| Argument          | Description                               |
+| ----------------- | ----------------------------------------- |
+| `samplesheet.csv` | Input samplesheet in CSV format           |
+| `results_dir`     | Output directory for all pipeline results |
 
 **Options:**
+| Option                     | Description                              |
+| -------------------------- | ---------------------------------------- |
+| `-h`, `--help`             | Show help message and exit               |
+| `-v`, `--version`          | Show pipeline version and exit           |
+| `--qcflow-config FILE`     | Custom configuration file for QCflow     |
+| `--viralrecon-config FILE` | Custom configuration file for Viralrecon |
+
+**Examples**
+
+
 ```
-  -h, --help                    Show help message
-  -v, --version                 Show version
-  --viralrecon-config FILE      Custom viralrecon configuration file
+# Run pipeline with default configuration:
+bash rsv_illumina_pipeline.sh samplesheet.csv results_2025_01_16
+
+# Run pipeline with custom configuration files:
+bash rsv_illumina_pipeline.sh samplesheet.csv results_2025_01_16 \
+  --qcflow-config qcflow.config \
+  --viralrecon-config viralrecon.config
+
+#Display help without submitting jobs:
+bash rsv_illumina_pipeline.sh --help
 ```
 
 ### Nanopore Pipeline
-
-```bash
-# Basic usage
-./bin/rsv_nanopore.sh <samplesheet.csv> <results_dir>
-
-# With custom config
-./bin/rsv_nanopore.sh --viralassembly-config custom.config samplesheet.csv results/
+**Usage**
 ```
+bash rsv_nanopore_pipeline.sh <samplesheet.csv> <results_dir> [options]
+```
+**Required Arguments**
+| Argument          | Description                               |
+| ----------------- | ----------------------------------------- |
+| `samplesheet.csv` | Input samplesheet in CSV format           |
+| `results_dir`     | Output directory for all pipeline results |
 
 **Options:**
+| Option                     | Description                              |
+| -------------------------- | ---------------------------------------- |
+| `-h`, `--help`             | Show help message and exit               |
+| `-v`, `--version`          | Show pipeline version and exit           |
+| `--qcflow-config FILE`     | Custom configuration file for QCflow     |
+| `--viralassembly-config FILE` | Custom configuration file for Viralrecon |
+
+**Examples**
+
 ```
-  -h, --help                      Show help message
-  -v, --version                   Show version
-  --viralassembly-config FILE     Custom viralassembly configuration file
+# Run pipeline with default configuration:
+bash rsv_nanopore_pipeline.sh samplesheet.csv results_2025_01_16
+
+# Run pipeline with custom configuration files:
+bash rsv_nanopore_pipeline.sh samplesheet.csv results_2025_01_16 \
+  --qcflow-config qcflow.config \
+  --viralassembly-config viralassembly.config
+
+#Display help without submitting jobs:
+bash rsv_nanopore_pipeline.sh --help
 ```
 
 ### Input Samplesheet Format
 
 **Illumina (paired-end):**
 ```csv
-sample,fastq_1,fastq_2
-sample1,/path/to/sample1_R1.fastq.gz,/path/to/sample1_R2.fastq.gz
-sample2,/path/to/sample2_R1.fastq.gz,/path/to/sample2_R2.fastq.gz
+sample,fastq_1,fastq_2,long_fastq
+sample1,/path/to/sample1_R1.fastq.gz,/path/to/sample1_R2.fastq.gz,NA
+sample2,/path/to/sample2_R1.fastq.gz,/path/to/sample2_R2.fastq.gz,NA
 ```
 
 **Nanopore (single-end):**
 ```csv
-sample,fastq
-sample1,/path/to/sample1.fastq.gz
-sample2,/path/to/sample2.fastq.gz
+sample,fastq_1,fastq_2,long_fastq
+sample1,NA,NA,/path/to/sample1.fastq.gz
+sample2,NA,NA/path/to/sample2.fastq.gz
 ```
 
-## Output Structure
+### RSV Pipeline Output Structure
 
-### Common Structure (Both Platforms)
+The RSV pipeline produces structured outputs for both Illumina and Nanopore sequencing.  
+This summary highlights **common outputs** and **platform-specific differences**.
 
+---
 ```
+#### Top-level results (common)
 results/
-├── nf-qcflow/                          # QC results (platform-specific)
-│   └── report/
-│       ├── reads_*.qc_report.csv       # * = illumina or nanopore
-│       └── reads_*.topmatches.csv
-├── mash_screen/                        # RSV typing results
-├── rsvA/                               # RSV A analysis
-│   ├── viralrecon/ OR viralassembly/   # Platform-specific
-│   ├── nf-covflow/                     # Coverage analysis
-│   └── nextclade/                      # Phylogenetic classification
-├── rsvB/                               # RSV B analysis
-│   ├── viralrecon/ OR viralassembly/
-│   ├── nf-covflow/
-│   └── nextclade/
-└── summary_report/                     # Final consolidated results
-    ├── rsv_master.tsv                  # Master summary report
-    ├── rsvA/
-    │   ├── *.consensus.fa OR *.fasta
-    │   ├── *.bam
-    │   └── nextclade.tsv
-    └── rsvB/
-        ├── *.consensus.fa OR *.fasta
-        ├── *.bam
-        └── nextclade.tsv
+├── mash_screen/ # Mash RSV A/B classification per sample/barcode
+├── rsvA/ # RSV-A results (aligned reads, consensus, coverage, clade)
+├── rsvB/ # RSV-B results (aligned reads, consensus, coverage, clade)
+├── samplesheet_.csv # Classified samplesheets
+├── samplesheet_to_covflow_.csv # Covflow input samplesheets
+└── summary_report/ # Final consolidated outputs
+```
+---
+
+#### Final summary report (common)
+```
+results/summary_report/
+├── mash_screen/ # Mash classification per sample/barcode
+├── rsvA/ # RSV-A outputs
+│ ├── all_consensus.rsvA.fasta
+│ ├── all_consensus.rsvA_stats.tsv
+│ ├── chromosome_coverage_depth_summary.tsv
+│ ├── nextclade.* # Clade assignments
+│ └── plot/ # Coverage plots
+├── rsvB/ # RSV-B outputs (same structure as RSV-A)
+└── rsv_master.tsv # Final merged summary table
 ```
 
-### Illumina-Specific Outputs
+---
 
-```
-rsvA/viralrecon/
-├── variants/
-│   ├── ivar/
-│   │   └── consensus/
-│   │       └── bcftools/
-│   │           ├── *.consensus.fa
-│   │           ├── *.filtered.vcf.gz
-│   │           └── all_consensus_stats.tsv
-│   └── bowtie2/
-│       └── *.ivar_trim.sorted.bam
-```
+## Platform-specific differences
 
-### Nanopore-Specific Outputs
+| Feature / File | Illumina | Nanopore |
+|----------------|----------|----------|
+| QC report | `reads_illumina.qc_report.csv` | `reads_nanopore.qc_report.csv` |
+| Top matches | `reads_illumina.topmatches.csv` | `reads_nanopore.topmatches.csv` |
+| BAM files | Primer-trimmed & aligned (`*.ivar_trim.sorted.bam`) | Primer-trimmed + read groups (`*.primertrimmed.rg.sorted.bam`) |
 
-```
-rsvA/viralassembly/
-├── consensus/
-│   ├── *.fasta
-│   └── all_consensus_stats.tsv
-└── bam/
-    └── *.primertrimmed.rg.sorted.bam
-```
+---
 
-## Key Output Files
+### Key Output Files
 
-- **rsv_master.tsv**: Master summary report combining QC, consensus, coverage, and phylogenetic data
-- **consensus files**: `.fa` (Illumina) or `.fasta` (Nanopore)
-- **filtered.vcf.gz**: Filtered variant calls (Illumina only)
-- **nextclade.tsv**: Phylogenetic clade assignments and quality metrics
-- **chromosome_coverage_depth_summary.tsv**: Per-sample coverage statistics
-
-## Pipeline Steps
-
-Both pipelines follow similar workflow:
-
-1. **Samplesheet Preparation**: Validates and prepares input samplesheet
-2. **Quality Control**: Platform-specific QC (nf-qcflow)
-3. **RSV Classification**: MASH-based typing into RSV A or RSV B
-4. **Parallel Processing**: 
-   - **Illumina**: Viralrecon (variant calling + consensus)
-   - **Nanopore**: Viralassembly (consensus assembly)
-   - Consensus statistics calculation
-   - Coverage analysis (nf-covflow)
-   - Phylogenetic classification (Nextclade)
-5. **Result Consolidation**: Collect outputs into summary_report/
-6. **Final Report**: Generate unified rsv_master.tsv
-
-## Reference Data
-
-The pipeline uses RSV primer schemes and reference genomes:
-
-```
-resource/
-├── primerschemes/
-│   ├── rsvA/v3/
-│   │   ├── reference.fasta
-│   │   └── scheme.bed
-│   └── rsvB/v3/
-│       ├── reference.fasta
-│       └── scheme.bed
-└── db/
-    └── mash_screen/
-        └── sequences.msh
-```
-
-## Configuration
-
-### Default Configurations
-
-**Illumina:**
-- `conf/viralrecon.config`: Viralrecon parameters
-- `conf/slurm.config`: SLURM job submission settings
-
-**Nanopore:**
-- `conf/viralassembly.config`: Viralassembly parameters
-- `conf/qcflow.config`: QC pipeline parameters
-- `conf/slurm.config`: SLURM job submission settings
-
-### Custom Configuration
-
-**Illumina:**
-```bash
-./bin/rsv_illumina.sh --viralrecon-config /path/to/custom.config samplesheet.csv results/
-```
-
-**Nanopore:**
-```bash
-./bin/rsv_nanopore.sh --viralassembly-config /path/to/custom.config samplesheet.csv results/
-```
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Conda environment not found**: Ensure `virus_env` is created and activated
-2. **Missing reference files**: Check that all resource files exist in expected locations
-3. **Nextflow resume**: Both pipelines use `-resume` flag for recovery
-4. **No consensus files found**: Check if samples passed QC and classification steps
-
-### Platform-Specific Issues
-
-**Illumina:**
-- Ensure paired-end FASTQ files are correctly specified
-- Check iVar trimming parameters if primer removal fails
-
-**Nanopore:**
-- Verify basecalling quality (Q-score filtering)
-- Check read length distribution matches amplicon scheme
-
-### Logs
-
-Pipeline logs include timestamps and version information:
-
-```
-[2024-12-22 10:30:15] [rsv_illumina.sh-1.0] Running: nextflow run ...
-[2024-12-22 10:45:30] [rsv_nanopore.sh-1.0] Running: python screen_rsv_mash.py ...
-```
-
-## Best Practices
-
-1. **Quality Control**: Review QC reports before proceeding with analysis
-2. **Mixed Samples**: The pipeline automatically handles samples with mixed RSV A/B classifications
-3. **Resource Allocation**: Adjust SLURM configuration based on sample count and cluster capacity
-4. **Data Management**: Keep raw data separate from results directory
-5. **Version Control**: Use `--version` flag to track pipeline versions
-
-## Contributing
-
-Contributions are welcome! Please submit issues or pull requests.
-
-## License
-
-[Specify your license here]
-
-## Contact
-
-[Specify contact information]
+| File | Description | notes |
+|----|------------|------------|
+| `rsv_master.tsv` | Consolidates QC, consensus, coverage, and clade results for all samples |  |
+| `all_consensus.*.fa` | Combined consensus FASTA per rsv subgroup | for coinfection consensus sequecnes, they are recognized by the same runid-sampleid and different reference id as part of their consensus id 
+| `reads_*.qc_report.csv` | Read-level QC metrics | all samples |
+| `nextclade.tsv` | Clade assignment and quality metrics | all samples per rsv subgroup |
+| Plot files | Amplicon & chromosome coverage PDFs/TSVs (`plot/`) |  per rsv subgroup |
+| Consensus stats | `all_consensus.*_stats.tsv` | consensus coverage, completeness |
+| Nextclade outputs | `nextclade.*` | `nextclade.*` (same, per sample) |
+---
 
 ## Citation
 
@@ -345,12 +265,13 @@ If you use this pipeline, please cite:
 
 **Illumina Pipeline:**
 - [nf-core/viralrecon](https://doi.org/10.5281/zenodo.3901628)
-- [iVar](https://doi.org/10.1186/s13059-018-1618-7)
 
 **Nanopore Pipeline:**
-- [Medaka](https://github.com/nanoporetech/medaka)
+- [viralassembly]((https://github.com/phac-nml/viralassembly)
 
 **Both Pipelines:**
 - [Nextclade](https://clades.nextstrain.org/)
 - [MASH](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-016-0997-x)
 - [Nextflow](https://doi.org/10.1038/nbt.3820)
+- [nf-qcflow](https://github.com/xiaoli-dong/nf-qcflow)
+- [nf-covflow](https://github.com/xiaoli-dong/nf-covflow)
