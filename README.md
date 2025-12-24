@@ -90,7 +90,7 @@ flowchart LR
 |---------|----------|----------|
 | **Analysis Pipeline** | nf-core/viralrecon | viralassembly |
 | **Read Type** | Short reads (paired-end) | Long reads (single-end) |
-| **Variant Calling** | iVar + BCFtools | Medaka/Clair3 |
+| **Variant Calling** | iVar + BCFtools | Clair3 + BCFtools |
 | **BAM Files** | `*.ivar_trim.sorted.bam` | `*.primertrimmed.rg.sorted.bam` |
 | **QC Report** | `reads_illumina.qc_report.csv` | `reads_nanopore.qc_report.csv` |
 
