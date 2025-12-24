@@ -267,7 +267,7 @@ If you use this pipeline, please cite:
 - [nf-core/viralrecon](https://doi.org/10.5281/zenodo.3901628)
 
 **Nanopore Pipeline:**
-- [viralassembly]((https://github.com/phac-nml/viralassembly)
+- [viralassembly](https://github.com/phac-nml/viralassembly)
 
 **Both Pipelines:**
 - [Nextclade](https://clades.nextstrain.org/)
