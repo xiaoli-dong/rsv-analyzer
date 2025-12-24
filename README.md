@@ -194,7 +194,7 @@ nextflow clean -f
 
 ## Credits
 - **rsv-analyzer** was written by **Xiaoli Dong**
-- Extensive support was provided by the **ProvLab Research Team** in Calgary for generating sequencing data, conducting the pipeline testing, providing feedback for improvements:
+- Extensive support was provided by the **ProvLab Research Team** in Calgary for generating sequencing data, conducting the pipeline testing, and providing feedback for improvements:
   >- **Johanna M Thayer**
   >- **Petya Kolva**
   >- **Kara Gill**
