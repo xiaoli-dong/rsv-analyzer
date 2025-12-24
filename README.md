@@ -1,10 +1,6 @@
 # RSV Analysis Pipeline
 
-An automated pipeline for processing Respiratory Syncytial Virus (RSV) sequencing data from both Illumina and Nanopore platforms, including quality control, viral classification, consensus generation, and phylogenetic analysis.
-
-## Overview
-
-This pipeline processes RSV samples through multiple stages of analysis, automatically classifying samples into RSV A or RSV B subtypes and generating comprehensive reports including consensus sequences, variant calls, coverage statistics, and phylogenetic classifications.
+An automated pipeline for processing Respiratory Syncytial Virus (RSV) sequencing data from both Illumina and Nanopore platforms. This pipeline processes RSV samples through multiple stages of analysis, automatically classifying samples into RSV A or RSV B subtypes and generating comprehensive reports including consensus sequences, variant calls, coverage statistics, and phylogenetic classifications.
 
 **Supported Platforms:**
 - **Illumina**: Short-read amplicon sequencing
