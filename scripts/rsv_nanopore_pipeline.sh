@@ -43,47 +43,120 @@ show_version() {
 
 show_help() {
     cat << EOF
-$SCRIPT_NAME - RSV Nanopore Analysis Pipeline
+$0 - RSV Nanopore Analysis Pipeline
 
 Usage:
-   $SCRIPT_NAME [options] <samplesheet.csv> <results_dir>
+   bash $0 <samplesheet.csv> <results_dir> [options]
 
+REQUIRED:
+  samplesheet.csv       Input samplesheet (CSV)
+  results_dir           Output directory for pipeline results
 
 Options:
-  --viralassembly-config FILE  Path to config file (default: ${SCRIPT_DIR}/rsv_nanopore.config)
-  -h, --help                   Show this help
-  -v, --version                Show version
+  -h, --help
+  -v, --version
+  --qcflow-config FILE   Custom qcflow config
+  --viralassembly-config FILE   Custom viralassembly config
 
-Example:
-  $SCRIPT_NAME samplesheet.csv
-  $SCRIPT_NAME samplesheet.csv myresults --viralassembly-config custom.config
+EXMPLES:
+ sh $0 samplesheet.csv results_2025_01_16
+ sh $0 samplesheet.csv results_2025_01_16 \
+      --qcflow-config qcflow.config \
+      --viralassembly-config viralassembly.config
+
+CHECK HELP WITHOUT RUNNING:
+  bash $0 --help
+
+NOTES:
+  • This script is intended to be run in a SLURM environment
 
 EOF
 }
 
+
+# Allow help without sbatch
+case "${1:-}" in
+    -h|--help)
+        show_help
+        exit 0
+        ;;
+esac
+
 # ==========================================================
-# Argument parsing
+# Required arguments
 # ==========================================================
-POSITIONAL_ARGS=()
+
+if [[ $# -lt 2 ]]; then
+    echo "ERROR: Missing required arguments"
+    show_help
+    exit 1
+fi
+
+SAMPLESHEET="$1"
+RESULTS_DIR="$2"
+shift 2
+
+# Optional named arguments
+QCFLOW_CONFIG=""
+VIRALASSEMBLY_CONFIG=""
+
+# ==========================================================
+# Parse named options
+# ==========================================================
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        -h|--help) show_help; exit 0 ;;
-        -v|--version) show_version; exit 0 ;;
-        --viralassembly-config)
-            VIRALASSEMBLY_CONFIG_FILE="${2:-}"
+        --qcflow-config)
+            QCFLOW_CONFIG="${2:-}"
             shift 2
             ;;
-        --*) echo "Unknown option: $1" >&2; exit 1 ;;
-        *) POSITIONAL_ARGS+=("$1"); shift ;;
+        --viralassembly-config)
+            VIRALASSEMBLY_CONFIG="${2:-}"
+            shift 2
+            ;;
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        *)
+            echo "ERROR: Unknown option: $1"
+            show_help
+            exit 1
+            ;;
     esac
 done
 
-set -- "${POSITIONAL_ARGS[@]}"
-[[ $# -eq 2 ]] || { show_help; exit 1; }
+# ==========================================================
+# Validation
+# ==========================================================
 
-readonly INPUT_SAMPLESHEET="$1"
-readonly RESULTS_DIR="$(mkdir -p "$2" && cd "$2" && pwd)"
+if [[ ! -s "$SAMPLESHEET" ]]; then
+    echo "ERROR: Samplesheet missing or empty: $SAMPLESHEET"
+    exit 1
+fi
+
+validate_config() {
+    local cfg="$1"
+    local name="$2"
+
+    if [[ -n "$cfg" ]]; then
+        if [[ ! -f "$cfg" ]]; then
+            echo "ERROR: $name config not found: $cfg"
+            exit 1
+        fi
+        if [[ ! -s "$cfg" ]]; then
+            echo "WARNING: $name config is empty: $cfg"
+        fi
+        echo "$(cd "$(dirname "$cfg")" && pwd)/$(basename "$cfg")"
+    fi
+}
+
+QCFLOW_CONFIG="$(validate_config "$QCFLOW_CONFIG" "QCflow")"
+VIRALASSEMBLY_CONFIG="$(validate_config "$VIRALASSEMBLY_CONFIG" "ViralAssembly")"
+
+# Resolve absolute paths
+SAMPLESHEET="$(cd "$(dirname "$SAMPLESHEET")" && pwd)/$(basename "$SAMPLESHEET")"
+RESULTS_DIR="$(mkdir -p "$RESULTS_DIR" && cd "$RESULTS_DIR" && pwd)"
 
 # ==========================================================
 # Logging & helpers
@@ -102,10 +175,6 @@ run_cmd() {
     "$@" || error_exit "Command failed: $*"
 }
 
-check_file() {
-    [[ -s "$1" ]] || error_exit "File missing or empty: $1"
-}
-
 check_conda_env() {
     conda info --envs | awk -v e="$1" '$1==e{f=1}END{exit !f}'
 }
@@ -118,11 +187,10 @@ activate_env() {
 # ==========================================================
 # Validation
 # ==========================================================
-check_file "$INPUT_SAMPLESHEET"
-check_file "$VIRALASSEMBLY_CONFIG_FILE"
 
-log "Input samplesheet      : $INPUT_SAMPLESHEET"
+log "Input samplesheet      : $SAMPLESHEET"
 log "Results directory      : $RESULTS_DIR"
+log "QCflow config file     : $QCFLOW_CONFIG_FILE"
 log "Viralassembly config file : $VIRALASSEMBLY_CONFIG_FILE"
 
 # ==========================================================
@@ -131,13 +199,16 @@ log "Viralassembly config file : $VIRALASSEMBLY_CONFIG_FILE"
 check_conda_env "$ENV_NAME" || error_exit "Conda env '$ENV_NAME' not found"
 activate_env "$ENV_NAME"
 
+
 # ==========================================================
 # STEP 1: Prepare samplesheet
 # ==========================================================
 log "=== STEP 1: Preparing samplesheet ==="
-readonly SAMPLESHEET="$RESULTS_DIR/samplesheet_to_qc.csv"
-cp "$INPUT_SAMPLESHEET" "$SAMPLESHEET"
-check_file "$SAMPLESHEET"
+
+ss="$RESULTS_DIR/samplesheet_to_qc.csv"
+cp "$SAMPLESHEET" "$ss"
+
+[[ -s "$ss" ]] || { log "No $virus samples found, skipping"; return; }
 
 # ==========================================================
 # STEP 2: QC pipeline
@@ -146,7 +217,7 @@ log "=== STEP 2: Running QC pipeline ==="
 run_cmd nextflow run "${path_to_qc_pipeline}/main.nf" \
     -profile singularity,slurm \
     -c "$QCFLOW_CONFIG_FILE" \
-    --input "$SAMPLESHEET" \
+    --input "$ss" \
     --platform nanopore \
     --outdir "$RESULTS_DIR/nf-qcflow" \
     -resume
@@ -184,11 +255,16 @@ process_virus() {
         --outdir "${viralassembly_outdir}" \
         --scheme "$virus" \
         -resume
+
+    run_cmd cat "${viralassembly_outdir}/consensus/"*.fasta |
+        python "$SCRIPT_DIR/reformat_fasta.py" \
+        -o "${viralassembly_outdir}/consensus/all_consensus.${virus}.fasta"
+
     # Consensus stats
     #mkdir -p "$RESULTS_DIR/$virus/consensus"
-    run_cmd python "$SCRIPT_DIR/consensus_stats.py" \
-        "${viralassembly_outdir}/consensus" \
-        "${viralassembly_outdir}/consensus/all_consensus_stats.tsv"
+    run_cmd  python "$SCRIPT_DIR/fasta_stats.py" \
+        "${viralassembly_outdir}/consensus/all_consensus.${virus}.fasta" \
+        -o "${viralassembly_outdir}/consensus/all_consensus.${virus}_stats.tsv"
 
     # Prepare for nf-covflow
     mkdir -p "${viralassembly_outdir}/bam_to_covflow"
@@ -238,7 +314,7 @@ for virus in rsvA rsvB; do
     mkdir -p "${final_report_dir}/${virus}"
     viralassembly_outdir="$RESULTS_DIR/$virus/viralassembly"
     #cp "$RESULTS_DIR/samplesheet_${virus}.csv" "${final_report_dir}/"
-    cp "${viralassembly_outdir}/consensus/"* "${final_report_dir}/${virus}/" || true
+    cp "${viralassembly_outdir}/consensus/"all_consensus.* "${final_report_dir}/${virus}/" || true
     cp "${viralassembly_outdir}/bam/"*.primertrimmed.rg.sorted.bam* "${final_report_dir}/${virus}/" || true
     cp "$RESULTS_DIR/$virus/nextclade/"* "${final_report_dir}/${virus}/" || true
     cp -r "$RESULTS_DIR/$virus/nf-covflow/report/"* "${final_report_dir}/${virus}/" || true
@@ -254,10 +330,10 @@ conda deactivate || true
 cd "$final_report_dir" || error_exit "Failed to cd to $final_report_dir"
 run_cmd python "$SCRIPT_DIR/make_summary_report.py" \
     --qc reads_nanopore.qc_report.csv \
-    --consensusA rsvA/all_consensus_stats.tsv \
+    --consensusA rsvA/all_consensus.rsvA_stats.tsv \
     --depthA rsvA/chromosome_coverage_depth_summary.tsv \
     --nextcladeA rsvA/nextclade.tsv \
-    --consensusB rsvB/all_consensus_stats.tsv \
+    --consensusB rsvB/all_consensus.rsvB_stats.tsv \
     --depthB rsvB/chromosome_coverage_depth_summary.tsv \
     --nextcladeB rsvB/nextclade.tsv \
     --samplesheetA ../samplesheet_rsvA.csv \

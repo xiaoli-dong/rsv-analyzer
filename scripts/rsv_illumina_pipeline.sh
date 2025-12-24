@@ -26,6 +26,10 @@ readonly rsvB_bed="${RSV_PROG_BASE}/resource/primerschemes/rsvB/v3/scheme.bed"
 readonly MASH_DB="${RSV_PROG_BASE}/resource/db/mash_screen/sequences.msh"
 
 # Viralrecon config (default + override)
+readonly DEFAULT_QCFLOW_CONFIG_FILE="${RSV_PROG_BASE}/conf/qcflow.config"
+QCFLOW_CONFIG_FILE="$DEFAULT_QCFLOW_CONFIG_FILE"
+
+# Viralrecon config (default + override)
 readonly DEFAULT_VIRALRECON_CONFIG_FILE="${RSV_PROG_BASE}/conf/viralrecon.config"
 VIRALRECON_CONFIG_FILE="$DEFAULT_VIRALRECON_CONFIG_FILE"
 
@@ -38,42 +42,118 @@ show_version() {
 
 show_help() {
     cat << EOF
-$SCRIPT_NAME - RSV Illumina analysis pipeline
+$0 - RSV Illumina analysis pipeline
 
-Usage:
-  $SCRIPT_NAME [options] <samplesheet.csv> <results_dir>
+USAGE:
+ bash $0 <samplesheet.csv> <results_dir> [options]
+
+REQUIRED:
+  samplesheet.csv       Input samplesheet (CSV)
+  results_dir           Output directory for pipeline results
 
 Options:
   -h, --help
   -v, --version
+  --qcflow-config FILE   Custom qcflow config
   --viralrecon-config FILE   Custom viralrecon config
 
+EXAMPLES:
+  sh $0 samplesheet.csv results_2025_01_16
+  sh $0 samplesheet.csv results_2025_01_16 \
+      --qcflow-config qcflow.config \
+      --viralrecon-config viralrecon.config
+
+CHECK HELP WITHOUT SUBMITTING:
+  bash $0 --help
+
+NOTES:
+  • This script is intended to be run in a SLURM environment
 EOF
 }
 
+# Allow help without sbatch
+case "${1:-}" in
+    -h|--help)
+        show_help
+        exit 0
+        ;;
+esac
+
 # ==========================================================
-# Argument parsing
+# Required arguments
 # ==========================================================
-POSITIONAL_ARGS=()
+
+if [[ $# -lt 2 ]]; then
+    echo "ERROR: Missing required arguments"
+    show_help
+    exit 1
+fi
+
+SAMPLESHEET="$1"
+RESULTS_DIR="$2"
+shift 2
+
+# Optional named arguments
+QCFLOW_CONFIG=""
+VIRALRECON_CONFIG=""
+
+# ==========================================================
+# Parse named options
+# ==========================================================
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        -h|--help) show_help; exit 0 ;;
-        -v|--version) show_version; exit 0 ;;
-        --viralrecon-config)
-            VIRALRECON_CONFIG_FILE="$2"
+        --qcflow-config)
+            QCFLOW_CONFIG="${2:-}"
             shift 2
             ;;
-        --*) echo "Unknown option: $1" >&2; exit 1 ;;
-        *) POSITIONAL_ARGS+=("$1"); shift ;;
+        --viralrecon-config)
+            VIRALRECON_CONFIG="${2:-}"
+            shift 2
+            ;;
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        *)
+            echo "ERROR: Unknown option: $1"
+            show_help
+            exit 1
+            ;;
     esac
 done
 
-set -- "${POSITIONAL_ARGS[@]}"
-[[ $# -eq 2 ]] || { show_help; exit 1; }
+# ==========================================================
+# Validation
+# ==========================================================
 
-readonly INPUT_SAMPLESHEET="$1"
-readonly RESULTS_DIR="$(mkdir -p "$2" && cd "$2" && pwd)"
+if [[ ! -s "$SAMPLESHEET" ]]; then
+    echo "ERROR: Samplesheet missing or empty: $SAMPLESHEET"
+    exit 1
+fi
+
+validate_config() {
+    local cfg="$1"
+    local name="$2"
+
+    if [[ -n "$cfg" ]]; then
+        if [[ ! -f "$cfg" ]]; then
+            echo "ERROR: $name config not found: $cfg"
+            exit 1
+        fi
+        if [[ ! -s "$cfg" ]]; then
+            echo "WARNING: $name config is empty: $cfg"
+        fi
+        echo "$(cd "$(dirname "$cfg")" && pwd)/$(basename "$cfg")"
+    fi
+}
+
+QCFLOW_CONFIG="$(validate_config "$QCFLOW_CONFIG" "QCflow")"
+VIRALRECON_CONFIG="$(validate_config "$VIRALRECON_CONFIG" "Viralrecon")"
+
+# Resolve absolute paths
+SAMPLESHEET="$(cd "$(dirname "$SAMPLESHEET")" && pwd)/$(basename "$SAMPLESHEET")"
+RESULTS_DIR="$(mkdir -p "$RESULTS_DIR" && cd "$RESULTS_DIR" && pwd)"
 
 # ==========================================================
 # Logging & helpers
@@ -92,10 +172,6 @@ run_cmd() {
     "$@" || error_exit "Command failed: $*"
 }
 
-check_file() {
-    [[ -s "$1" ]] || error_exit "File missing or empty: $1"
-}
-
 check_conda_env() {
     conda info --envs | awk -v e="$1" '$1==e{f=1}END{exit !f}'
 }
@@ -108,11 +184,10 @@ activate_env() {
 # ==========================================================
 # Validation
 # ==========================================================
-check_file "$INPUT_SAMPLESHEET"
-check_file "$VIRALRECON_CONFIG_FILE"
 
-log "Input samplesheet      : $INPUT_SAMPLESHEET"
+log "Input samplesheet      : $SAMPLESHEET"
 log "Results directory      : $RESULTS_DIR"
+log "QCflow config file     : $QCFLOW_CONFIG_FILE"
 log "Viralrecon config file : $VIRALRECON_CONFIG_FILE"
 
 # ==========================================================
@@ -125,16 +200,19 @@ activate_env "$ENV_NAME"
 # STEP 1: Prepare samplesheet
 # ==========================================================
 log "=== STEP 1: Preparing samplesheet ==="
-readonly SAMPLESHEET="$RESULTS_DIR/samplesheet_to_qc.csv"
-cp "$INPUT_SAMPLESHEET" "$SAMPLESHEET"
 
+ss="$RESULTS_DIR/samplesheet_to_qc.csv"
+cp "$SAMPLESHEET" "$ss"
+
+[[ -s "$ss" ]] || { log "No $virus samples found, skipping"; return; }
 # ==========================================================
 # STEP 2: QC pipeline
 # ==========================================================
 log "=== STEP 2: Running QC pipeline ==="
 run_cmd nextflow run "${path_to_qc_pipeline}/main.nf" \
   -profile singularity,slurm \
-  --input "$SAMPLESHEET" \
+  -c "$QCFLOW_CONFIG_FILE" \
+  --input "$ss" \
   --platform illumina \
   --outdir "$RESULTS_DIR/nf-qcflow" \
   -resume
@@ -171,9 +249,19 @@ process_virus() {
       --fasta "$ref" \
       -resume
 
-    run_cmd python "$SCRIPT_DIR/consensus_stats.py" \
-      "${viralrecon_outdir}/variants/ivar/consensus/bcftools/" \
-      "${viralrecon_outdir}/variants/ivar/consensus/bcftools/all_consensus_stats.tsv"
+    run_cmd cat "${viralrecon_outdir}/variants/ivar/consensus/bcftools/"*.consensus.fa | \
+        python "$SCRIPT_DIR/reformat_fasta.py" \
+        -o "${viralrecon_outdir}/variants/ivar/consensus/bcftools/all_consensus.${virus}.fa"
+
+
+
+    run_cmd python "$SCRIPT_DIR/fasta_stats.py" \
+      "${viralrecon_outdir}/variants/ivar/consensus/bcftools/all_consensus.${virus}.fa" \
+      -o "${viralrecon_outdir}/variants/ivar/consensus/bcftools/all_consensus.${virus}_stats.tsv"
+
+    # run_cmd python "$SCRIPT_DIR/consensus_stats.py" \
+    #   "${viralrecon_outdir}/variants/ivar/consensus/bcftools/" \
+    #   "${viralrecon_outdir}/variants/ivar/consensus/bcftools/all_consensus_stats.tsv"
 
     mkdir -p "${viralrecon_outdir}/bam_to_covflow"
     cp "${viralrecon_outdir}/variants/bowtie2/"*.ivar_trim.sorted.bam* \
@@ -218,8 +306,8 @@ for virus in rsvA rsvB; do
     mkdir -p "$final_report_dir/$virus"
     #cp "$RESULTS_DIR/samplesheet_${virus}.csv" "$final_report_dir/"
     viralrecon_outdir="$RESULTS_DIR/$virus/viralrecon"
-    cp "${viralrecon_outdir}/variants/ivar/consensus/bcftools/"*consensus* "$final_report_dir/$virus/"
-    cp "${viralrecon_outdir}/variants/ivar/consensus/bcftools/"*.filtered.vcf.gz* "$final_report_dir/$virus/"
+    cp "${viralrecon_outdir}/variants/ivar/consensus/bcftools/"all_consensus.* "$final_report_dir/$virus/"
+    #cp "${viralrecon_outdir}/variants/ivar/consensus/bcftools/"*.filtered.vcf.gz* "$final_report_dir/$virus/"
     cp "${viralrecon_outdir}/bam_to_covflow/"*.ivar_trim.sorted.bam* "$final_report_dir/$virus/"
     cp "$RESULTS_DIR/$virus/nextclade/"* "$final_report_dir/$virus/"
     cp -r "$RESULTS_DIR/$virus/nf-covflow/report/"* "$final_report_dir/$virus/"
@@ -237,10 +325,10 @@ cd "$final_report_dir" || error_exit "Failed to cd to summary report dir"
 
 run_cmd python "$SCRIPT_DIR/make_summary_report.py" \
   --qc reads_illumina.qc_report.csv \
-  --consensusA rsvA/all_consensus_stats.tsv \
+  --consensusA rsvA/all_consensus.rsvA_stats.tsv \
   --depthA rsvA/chromosome_coverage_depth_summary.tsv \
   --nextcladeA rsvA/nextclade.tsv \
-  --consensusB rsvB/all_consensus_stats.tsv \
+  --consensusB rsvB/all_consensus.rsvB_stats.tsv \
   --depthB rsvB/chromosome_coverage_depth_summary.tsv \
   --nextcladeB rsvB/nextclade.tsv \
   --samplesheetA ../samplesheet_rsvA.csv \
