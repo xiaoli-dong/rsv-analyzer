@@ -159,9 +159,9 @@ results/
 | File | Description |
 |------|-------------|
 | `rsv_master.tsv` | Master summary combining QC, consensus, coverage, and phylogenetic data |
-| `all_consensus.*.fasta` | Combined consensus sequences per RSV subtype |
+| `all_consensus.*.fasta` | Combined consensus sequences per RSV subgroup |
 | `reads_*.qc_report.csv` | Per-sample QC metrics |
-| `nextclade.tsv` | Clade assignments and quality metrics |
+| `nextclade.tsv` | Clade assignments and quality metrics per subgroup |
 | `*_stats.tsv` | Consensus coverage and completeness statistics |
 | `plot/*.pdf` | Amplicon and chromosome coverage visualizations |
 
