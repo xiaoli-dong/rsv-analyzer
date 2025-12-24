@@ -1,273 +1,201 @@
 # RSV Analysis Pipeline
 
-An automated pipeline for processing Respiratory Syncytial Virus (RSV) sequencing data from both Illumina and Nanopore platforms. This pipeline processes RSV samples through multiple stages of analysis, automatically classifying samples into RSV A or RSV B subgroups and generating comprehensive reports including consensus sequences, variant calls, coverage statistics, and phylogenetic classifications.
+Automated pipeline for RSV sequencing data analysis supporting both Illumina and Nanopore platforms. Performs quality control, RSV A/B classification, consensus generation, coverage analysis, and phylogenetic classification.
 
-**Supported Platforms:**
-- **Illumina**: Short-read amplicon sequencing
-- **Nanopore**: Long-read amplicon sequencing
+[![Nextflow](https://img.shields.io/badge/nextflow-%E2%89%A523.04.0-23aa8f.svg)](https://www.nextflow.io/)
+[![Singularity](https://img.shields.io/badge/singularity-%E2%89%A53.8.0-1d355c.svg)](https://sylabs.io/docs/)
 
 ## Workflows
 
-### Illumina Workflow
+### Illumina
+
 ```mermaid
 flowchart LR
- subgraph RSV_Branches["RSV A/B Processing"]
-    direction LR
-        VA["Viralrecon + Consensus"]
-        A["RSV A"]
-        VB["Viralrecon + Consensus"]
-        B["RSV B"]
-        CA["Coverage (nf-covflow) + Nextclade"]
-        CB["Coverage (nf-covflow) + Nextclade"]
-        Merge["Consolidate Results"]
-  end
-    Start(["Start Illumina Pipeline"]) --> Step1["Prepare Samplesheet"]
-    Step1 --> Step2["QC<br>nf-qcflow"]
-    Step2 --> Step3["RSV A/B Classification"]
-    A --> VA
-    B --> VB
-    VA --> CA
-    VB --> CB
-    CA --> Merge
-    CB --> Merge
-    Merge --> Copy["Copy to summary_report"]
-    Copy --> Final["Generate Master Report"]
-    Final --> End(["Pipeline Complete"])
+    subgraph RSV["RSV A/B Processing"]
+        direction LR
+        A["RSV A"] --> VA["Viralrecon"]
+        B["RSV B"] --> VB["Viralrecon"]
+        VA --> CA["Coverage(nf-covflow) +<br/>Nextclade"]
+        VB --> CB["Coverage(nf-covflow) +<br/>Nextclade"]
+        CA --> M["Merge"]
+        CB --> M
+    end
+    
+    Start(["Start"]) --> QC["QC<br/>(nf-qcflow)"]
+    QC --> Class["MASH<br/>Classification"]
+    Class --> A
+    Class --> B
+    M --> Report["Master Report<br/>(rsv_master.tsv)"]
+    Report --> End(["End"])
 
     style VA fill:#fce4ec
     style VB fill:#fce4ec
-    style Start fill:#e1f5e1,stroke:#333
-    style Step2 fill:#e3f2fd
-    style Step3 fill:#fff3e0
-    style Final fill:#e8f5e9
-    style End fill:#e1f5e1,stroke:#333
-    style RSV_Branches fill:#f3e5f5,stroke:#333
+    style Start fill:#e1f5e1,stroke:#333,stroke-width:2px
+    style End fill:#e1f5e1,stroke:#333,stroke-width:2px
+    style QC fill:#e3f2fd
+    style Class fill:#fff3e0
+    style RSV fill:#f3e5f5,stroke:#333
+    style Report fill:#e8f5e9
 ```
 
-### Nanopore Workflow
+### Nanopore
 
 ```mermaid
 flowchart LR
-    %% Main Pipeline
-    Start2([Start Nanopore Pipeline]) --> Step1n[Prepare Samplesheet]
-    Step1n --> Step2n[QC <br>nf-qcflow]
-    Step2n --> Step3n[RSV A/B Classification]
-
-    %% RSV A/B Processing Branches
-    subgraph RSV_Branches["RSV A/B Processing"]
+    subgraph RSV["RSV A/B Processing"]
         direction LR
-        A2["RSV A"] --> VA2["Viralassembly + Consensus"]
-        B2["RSV B"] --> VB2["Viralassembly + Consensus"]
-        VA2 --> CA2["Coverage (nf-covflow) + Nextclade"]
-        VB2 --> CB2["Coverage (nf-covflow) + Nextclade"]
-        CA2 --> Merge2["Consolidate Results"]
-        CB2 --> Merge2
+        A["RSV A"] --> VA["Viralassembly"]
+        B["RSV B"] --> VB["Viralassembly"]
+        VA --> CA["Coverage(nf-covflow) +<br/>Nextclade"]
+        VB --> CB["Coverage(nf-covflow) +<br/>Nextclade"]
+        CA --> M["Merge"]
+        CB --> M
     end
+    
+    Start(["Start"]) --> QC["QC<br/>(nf-qcflow)"]
+    QC --> Class["MASH<br/>Classification"]
+    Class --> A
+    Class --> B
+    M --> Report["Master Report<br/>(rsv_master.tsv)"]
+    Report --> End(["End"])
 
-    %% Final Steps
-    Merge2 --> Copy2["Copy to summary_report"]
-    Copy2 --> Final2["Generate Master Report"]
-    Final2 --> End2([Pipeline Complete])
-
-    %% Styling
-    style Start2 fill:#e1f5e1,stroke:#333
-    style End2 fill:#e1f5e1,stroke:#333
-    style Step2n fill:#e3f2fd
-    style Step3n fill:#fff3e0
-    style RSV_Branches fill:#f3e5f5,stroke:#333
-    style VA2 fill:#ffe4b5
-    style VB2 fill:#ffe4b5
-    style Final2 fill:#e8f5e9
+    style VA fill:#ffe4b5
+    style VB fill:#ffe4b5
+    style Start fill:#e1f5e1,stroke:#333,stroke-width:2px
+    style End fill:#e1f5e1,stroke:#333,stroke-width:2px
+    style QC fill:#e3f2fd
+    style Class fill:#fff3e0
+    style RSV fill:#f3e5f5,stroke:#333
+    style Report fill:#e8f5e9
 ```
 
-## Key Differences Between Platforms
+## Platform Comparison
 
 | Feature | Illumina | Nanopore |
 |---------|----------|----------|
-| **Analysis Pipeline** | nf-core/viralrecon | viralassembly |
-| **Read Type** | Short reads (paired-end) | Long reads (single-end) |
+| **Pipeline** | [nf-core/viralrecon](https://github.com/nf-core/viralrecon) | [viralassembly](https://github.com/phac-nml/viralassembly) |
+| **Read Type** | Paired-end | Single-end long reads |
 | **Variant Calling** | iVar + BCFtools | Clair3 + BCFtools |
 | **BAM Files** | `*.ivar_trim.sorted.bam` | `*.primertrimmed.rg.sorted.bam` |
-| **QC Report** | `reads_illumina.qc_report.csv` | `reads_nanopore.qc_report.csv` |
 
-## Features
-
-- **Automated QC**: Platform-specific quality control and filtering
-- **RSV Typing**: MASH-based classification into RSV A or RSV B subtypes
-- **Consensus Generation**: High-quality consensus sequence generation
-- **Coverage Analysis**: Detailed per-base coverage statistics
-- **Phylogenetic Classification**: Nextclade-based clade assignment
-- **Comprehensive Reporting**: Unified summary report combining all metrics
+**Shared:** [nf-qcflow](https://github.com/xiaoli-dong/nf-qcflow), [nf-covflow](https://github.com/xiaoli-dong/nf-covflow), [Nextclade](https://clades.nextstrain.org/), [MASH](https://mash.readthedocs.io/)
 
 ## Requirements
 
-### Software & Environment
-Nextflow, singularity, virus_env conda environment
-
-### External Pipelines
-
-| Illumina | Nanopore |
-|----------|----------|
-| [nf-core/viralrecon](https://github.com/nf-core/viralrecon)<br>[nf-qcflow](https://github.com/xiaoli-dong/nf-qcflow)<br>[nf-covflow](https://github.com/xiaoli-dong/nf-covflow) | [viralassembly](https://github.com/phac-nml/viralassembly)<br>[nf-qcflow](https://github.com/xiaoli-dong/nf-qcflow)<br>[nf-covflow](https://github.com/xiaoli-dong/nf-covflow) |
-
+- Nextflow ≥23.04.0
+- Singularity ≥3.8.0
+- Conda environment: `virus_env`
+- HPC with SLURM scheduler
 
 ## Usage
 
-### Illumina Pipeline
-**Usage**
-```
+### Illumina
+```bash
 bash rsv_illumina_pipeline.sh <samplesheet.csv> <results_dir> [options]
-```
-**Required Arguments**
-| Argument          | Description                               |
-| ----------------- | ----------------------------------------- |
-| `samplesheet.csv` | Input samplesheet in CSV format           |
-| `results_dir`     | Output directory for all pipeline results |
 
-**Options:**
-| Option                     | Description                              |
-| -------------------------- | ---------------------------------------- |
-| `-h`, `--help`             | Show help message and exit               |
-| `-v`, `--version`          | Show pipeline version and exit           |
-| `--qcflow-config FILE`     | Custom configuration file for QCflow     |
-| `--viralrecon-config FILE` | Custom configuration file for Viralrecon |
+Options:
+  -h, --help                    Show help
+  -v, --version                 Show version
+  --qcflow-config FILE          Custom QC config
+  --viralrecon-config FILE      Custom viralrecon config
 
-**Examples**
-
-
-```
-# Run pipeline with default configuration:
+# Example
 bash rsv_illumina_pipeline.sh samplesheet.csv results_2025_01_16
-
-# Run pipeline with custom configuration files:
-bash rsv_illumina_pipeline.sh samplesheet.csv results_2025_01_16 \
-  --qcflow-config qcflow.config \
-  --viralrecon-config viralrecon.config
-
-#Display help without submitting jobs:
-bash rsv_illumina_pipeline.sh --help
 ```
 
-### Nanopore Pipeline
-**Usage**
-```
+### Nanopore
+```bash
 bash rsv_nanopore_pipeline.sh <samplesheet.csv> <results_dir> [options]
-```
-**Required Arguments**
-| Argument          | Description                               |
-| ----------------- | ----------------------------------------- |
-| `samplesheet.csv` | Input samplesheet in CSV format           |
-| `results_dir`     | Output directory for all pipeline results |
 
-**Options:**
-| Option                     | Description                              |
-| -------------------------- | ---------------------------------------- |
-| `-h`, `--help`             | Show help message and exit               |
-| `-v`, `--version`          | Show pipeline version and exit           |
-| `--qcflow-config FILE`     | Custom configuration file for QCflow     |
-| `--viralassembly-config FILE` | Custom configuration file for Viralrecon |
+Options:
+  -h, --help                    Show help
+  -v, --version                 Show version
+  --qcflow-config FILE          Custom QC config
+  --viralassembly-config FILE   Custom assembly config
 
-**Examples**
-
-```
-# Run pipeline with default configuration:
+# Example
 bash rsv_nanopore_pipeline.sh samplesheet.csv results_2025_01_16
-
-# Run pipeline with custom configuration files:
-bash rsv_nanopore_pipeline.sh samplesheet.csv results_2025_01_16 \
-  --qcflow-config qcflow.config \
-  --viralassembly-config viralassembly.config
-
-#Display help without submitting jobs:
-bash rsv_nanopore_pipeline.sh --help
 ```
 
-### Input Samplesheet Format
+## Input Samplesheet
 
-**Illumina (paired-end):**
+**Illumina:**
 ```csv
 sample,fastq_1,fastq_2,long_fastq
-sample1,/path/to/sample1_R1.fastq.gz,/path/to/sample1_R2.fastq.gz,NA
-sample2,/path/to/sample2_R1.fastq.gz,/path/to/sample2_R2.fastq.gz,NA
+sample1,/path/to/R1.fastq.gz,/path/to/R2.fastq.gz,NA
 ```
 
-**Nanopore (single-end):**
+**Nanopore:**
 ```csv
 sample,fastq_1,fastq_2,long_fastq
-sample1,NA,NA,/path/to/sample1.fastq.gz
-sample2,NA,NA/path/to/sample2.fastq.gz
+sample1,NA,NA,/path/to/reads.fastq.gz
 ```
 
-### RSV Pipeline Output Structure
+## Output Structure
 
-The RSV pipeline produces structured outputs for both Illumina and Nanopore sequencing.  
-This summary highlights **common outputs** and **platform-specific differences**.
-
----
 ```
-#### Top-level results (common)
 results/
-├── mash_screen/ # Mash RSV A/B classification per sample/barcode
-├── rsvA/ # RSV-A results (aligned reads, consensus, coverage, clade)
-├── rsvB/ # RSV-B results (aligned reads, consensus, coverage, clade)
-├── samplesheet_.csv # Classified samplesheets
-├── samplesheet_to_covflow_.csv # Covflow input samplesheets
-└── summary_report/ # Final consolidated outputs
-```
----
-
-#### Final summary report (common)
-```
-results/summary_report/
-├── mash_screen/ # Mash classification per sample/barcode
-├── rsvA/ # RSV-A outputs
-│ ├── all_consensus.rsvA.fasta
-│ ├── all_consensus.rsvA_stats.tsv
-│ ├── chromosome_coverage_depth_summary.tsv
-│ ├── nextclade.* # Clade assignments
-│ └── plot/ # Coverage plots
-├── rsvB/ # RSV-B outputs (same structure as RSV-A)
-└── rsv_master.tsv # Final merged summary table
+├── nf-qcflow/report/              # QC metrics
+├── mash_screen/                   # RSV A/B classification
+├── rsvA/                          # RSV A results
+│   ├── viralrecon/viralassembly/  # Platform-specific
+│   ├── nf-covflow/                # Coverage analysis
+│   └── nextclade/                 # Phylogenetic classification
+├── rsvB/                          # RSV B results (same structure)
+└── summary_report/                # ⭐ Final outputs
+    ├── rsv_master.tsv             # Master summary table
+    ├── rsvA/
+    │   ├── all_consensus.rsvA.fasta
+    │   ├── all_consensus.rsvA_stats.tsv
+    │   ├── chromosome_coverage_depth_summary.tsv
+    │   ├── nextclade.tsv
+    │   ├── *.bam / *.bam.bai
+    │   └── plot/                   # Coverage plots (PDF/TSV)
+    └── rsvB/                       # Same as rsvA/
 ```
 
----
+## Key Output Files
 
-## Platform-specific differences
+| File | Description |
+|------|-------------|
+| `rsv_master.tsv` | Master summary combining QC, consensus, coverage, and phylogenetic data |
+| `all_consensus.*.fasta` | Combined consensus sequences per RSV subtype |
+| `reads_*.qc_report.csv` | Per-sample QC metrics |
+| `nextclade.tsv` | Clade assignments and quality metrics |
+| `*_stats.tsv` | Consensus coverage and completeness statistics |
+| `plot/*.pdf` | Amplicon and chromosome coverage visualizations |
 
-| Feature / File | Illumina | Nanopore |
-|----------------|----------|----------|
-| QC report | `reads_illumina.qc_report.csv` | `reads_nanopore.qc_report.csv` |
-| Top matches | `reads_illumina.topmatches.csv` | `reads_nanopore.topmatches.csv` |
-| BAM files | Primer-trimmed & aligned (`*.ivar_trim.sorted.bam`) | Primer-trimmed + read groups (`*.primertrimmed.rg.sorted.bam`) |
+**Note:** Co-infections produce consensus sequences with same sequence id prefix but different reference IDs (e.g., `run1-sample1|ref1`, `run1-sample1|ref2`)
 
----
+## Troubleshooting
 
-### Key Output Files
+**Conda environment not found:**
+```bash
+conda env create -f environment.yml
+conda activate virus_env
+```
 
-| File | Description | notes |
-|----|------------|------------|
-| `rsv_master.tsv` | Consolidates QC, consensus, coverage, and clade results for all samples |  |
-| `all_consensus.*.fa` | Combined consensus FASTA per rsv subgroup | for coinfection consensus sequecnes, they are recognized by the same runid-sampleid and different reference id as part of their consensus id 
-| `reads_*.qc_report.csv` | Read-level QC metrics | all samples |
-| `nextclade.tsv` | Clade assignment and quality metrics | all samples per rsv subgroup |
-| Plot files | Amplicon & chromosome coverage PDFs/TSVs (`plot/`) |  per rsv subgroup |
-| Consensus stats | `all_consensus.*_stats.tsv` | consensus coverage, completeness |
-| Nextclade outputs | `nextclade.*` | `nextclade.*` (same, per sample) |
----
+**No consensus generated:**
+- Check QC report: `nf-qcflow/report/*.qc_report.csv`
+- Check MASH classification: `mash_screen/*.tsv`
+- Review coverage: `nf-covflow/report/`
+
+**Nextflow issues:**
+```bash
+rm -rf work/
+nextflow clean -f
+```
 
 ## Citation
 
-If you use this pipeline, please cite:
+**Illumina:** [nf-core/viralrecon](https://doi.org/10.5281/zenodo.3901628)  
+**Nanopore:** [viralassembly](https://github.com/phac-nml/viralassembly)  
+**Shared:** [Nextflow](https://doi.org/10.1038/nbt.3820), [MASH](https://doi.org/10.1186/s13059-016-0997-x), [Nextclade](https://doi.org/10.21105/joss.03773), [nf-qcflow](https://github.com/xiaoli-dong/nf-qcflow), [nf-covflow](https://github.com/xiaoli-dong/nf-covflow)
 
-**Illumina Pipeline:**
-- [nf-core/viralrecon](https://doi.org/10.5281/zenodo.3901628)
+## License
 
-**Nanopore Pipeline:**
-- [viralassembly](https://github.com/phac-nml/viralassembly)
+[Specify license]
 
-**Both Pipelines:**
-- [Nextclade](https://clades.nextstrain.org/)
-- [MASH](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-016-0997-x)
-- [Nextflow](https://doi.org/10.1038/nbt.3820)
-- [nf-qcflow](https://github.com/xiaoli-dong/nf-qcflow)
-- [nf-covflow](https://github.com/xiaoli-dong/nf-covflow)
+## Contact
+
+[Contact information]
