@@ -192,10 +192,12 @@ nextflow clean -f
 **Nanopore:** [viralassembly](https://github.com/phac-nml/viralassembly)  
 **Shared:** [Nextflow](https://doi.org/10.1038/nbt.3820), [MASH](https://doi.org/10.1186/s13059-016-0997-x), [Nextclade](https://doi.org/10.21105/joss.03773), [nf-qcflow](https://github.com/xiaoli-dong/nf-qcflow), [nf-covflow](https://github.com/xiaoli-dong/nf-covflow)
 
-## License
-
-[Specify license]
-
-## Contact
-
-[Contact information]
+## Credits
+- **rsv-analyzer** was written by **Xiaoli Dong**
+- Extensive support was provided by the **ProvLab Research Team** in Calgary for generating sequencing data, conducting the pipeline testing, providing feedback for improvements:
+  >- **Johanna M Thayer**
+  >- **Petya Kolva**
+  >- **Kara Gill**
+  >- **Anita Wong**
+  >- **Kanti Pabbaraju**
+  >- **Tarah Lynch**
