@@ -8,8 +8,8 @@ readonly prod_prog_base="/nfs/APL_Genomics/apps/production"
 readonly deve_prog_base="/nfs/Genomics_DEV/projects/xdong/deve"
 
 readonly path_to_viralassembly="${prod_prog_base}/viralassembly"
-readonly path_to_qc_pipeline="${deve_prog_base}/nf-qcflow"
-readonly path_to_covflow="${deve_prog_base}/nf-covflow"
+readonly path_to_qc_pipeline="${prod_prog_base}/qcflow_pipeline/nf-qcflow"
+readonly path_to_covflow="${prod_prog_base}/covflow_pipeline/nf-covflow"
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly RSV_PROG_BASE="${SCRIPT_DIR}/.."
@@ -153,6 +153,16 @@ validate_config() {
 
 QCFLOW_CONFIG="$(validate_config "$QCFLOW_CONFIG" "QCflow")"
 VIRALASSEMBLY_CONFIG="$(validate_config "$VIRALASSEMBLY_CONFIG" "ViralAssembly")"
+
+# After validation
+if [[ -n "$VIRALASSEMBLY_CONFIG" ]]; then
+    VIRALASSEMBLY_CONFIG_FILE="$VIRALASSEMBLY_CONFIG"
+fi
+
+if [[ -n "$QCFLOW_CONFIG" ]]; then
+    QCFLOW_CONFIG_FILE="$QCFLOW_CONFIG"
+fi
+
 
 # Resolve absolute paths
 SAMPLESHEET="$(cd "$(dirname "$SAMPLESHEET")" && pwd)/$(basename "$SAMPLESHEET")"

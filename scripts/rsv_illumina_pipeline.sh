@@ -8,9 +8,8 @@ readonly prod_prog_base="/nfs/APL_Genomics/apps/production"
 readonly deve_prog_base="/nfs/Genomics_DEV/projects/xdong/deve"
 
 readonly path_to_viralrecon="${prod_prog_base}/viralrecon"
-readonly path_to_qc_pipeline="${deve_prog_base}/nf-qcflow"
-readonly path_to_covflow="${deve_prog_base}/nf-covflow"
-
+readonly path_to_qc_pipeline="${prod_prog_base}/qcflow_pipeline/nf-qcflow"
+readonly path_to_covflow="${prod_prog_base}/covflow_pipeline/nf-covflow"
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly RSV_PROG_BASE="${SCRIPT_DIR}/.."
 readonly VERSION="$(cat "$SCRIPT_DIR/VERSION" 2>/dev/null || echo "unknown")"
@@ -150,6 +149,15 @@ validate_config() {
 
 QCFLOW_CONFIG="$(validate_config "$QCFLOW_CONFIG" "QCflow")"
 VIRALRECON_CONFIG="$(validate_config "$VIRALRECON_CONFIG" "Viralrecon")"
+
+# Override defaults if user supplied configs
+if [[ -n "$VIRALRECON_CONFIG" ]]; then
+    VIRALRECON_CONFIG_FILE="$VIRALRECON_CONFIG"
+fi
+
+if [[ -n "$QCFLOW_CONFIG" ]]; then
+    QCFLOW_CONFIG_FILE="$QCFLOW_CONFIG"
+fi
 
 # Resolve absolute paths
 SAMPLESHEET="$(cd "$(dirname "$SAMPLESHEET")" && pwd)/$(basename "$SAMPLESHEET")"
