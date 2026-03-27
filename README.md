@@ -73,7 +73,7 @@ flowchart LR
 
 | Feature | Illumina | Nanopore |
 |---------|----------|----------|
-| **Pipeline** | [nf-core/viralrecon](https://github.com/nf-core/viralrecon) | [viralassembly](https://github.com/phac-nml/viralassembly) |
+| **Pipeline** | [nf-core/viralrecon](https://github.com/nf-core/viralrecon) | viroflow |
 | **Read Type** | Paired-end | Single-end long reads |
 | **Variant Calling** | iVar + BCFtools | Clair3 + BCFtools |
 | **BAM Files** | `*.ivar_trim.sorted.bam` | `*.primertrimmed.rg.sorted.bam` |
@@ -111,7 +111,7 @@ Options:
   -h, --help                    Show help
   -v, --version                 Show version
   --qcflow-config FILE          Custom QC config
-  --viralassembly-config FILE   Custom assembly config
+  --viroflow-config FILE   Custom assembly config
 
 # Example
 bash rsv_nanopore_pipeline.sh samplesheet.csv results_2025_01_16
@@ -138,7 +138,7 @@ results/
 ├── nf-qcflow/report/              # QC metrics
 ├── mash_screen/                   # RSV A/B classification
 ├── rsvA/                          # RSV A results
-│   ├── viralrecon/viralassembly/  # Platform-specific
+│   ├── viralrecon/viroflow/  # Platform-specific
 │   ├── nf-covflow/                # Coverage analysis
 │   └── nextclade/                 # Phylogenetic classification
 ├── rsvB/                          # RSV B results (same structure)
@@ -190,7 +190,7 @@ nextflow clean -f
 ## Citation
 
 **Illumina:** [nf-core/viralrecon](https://doi.org/10.5281/zenodo.3901628)  
-**Nanopore:** [viralassembly](https://github.com/phac-nml/viralassembly)  
+**Nanopore:** viroflow
 **Shared:** [Nextflow](https://doi.org/10.1038/nbt.3820), [MASH](https://doi.org/10.1186/s13059-016-0997-x), [Nextclade](https://doi.org/10.21105/joss.03773), [nf-qcflow](https://github.com/xiaoli-dong/nf-qcflow), [nf-covflow](https://github.com/xiaoli-dong/nf-covflow)
 
 ## Credits
