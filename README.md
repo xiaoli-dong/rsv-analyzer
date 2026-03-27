@@ -44,8 +44,8 @@ flowchart LR
 flowchart LR
     subgraph RSV["RSV A/B Processing"]
         direction LR
-        A["RSV A"] --> VA["Viralassembly"]
-        B["RSV B"] --> VB["Viralassembly"]
+        A["RSV A"] --> VA["Viroflow"]
+        B["RSV B"] --> VB["Viroflow"]
         VA --> CA["Coverage(nf-covflow) +<br/>Nextclade"]
         VB --> CB["Coverage(nf-covflow) +<br/>Nextclade"]
         CA --> M["Merge"]
