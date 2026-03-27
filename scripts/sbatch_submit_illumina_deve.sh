@@ -14,7 +14,6 @@ set -euo pipefail
 # ==========================================================
 # Help & usage
 # ==========================================================
-
 show_help() {
     cat << EOF
 RSV Illumina SLURM submission script
@@ -32,10 +31,11 @@ OPTIONS:
   -h, --help               Show this help
 
 EXAMPLES:
-  sbatch $0 samplesheet.csv results_2025_01_16
-  sbatch $0 samplesheet.csv results_2025_01_16 \
+  sbatch $0 samplesheet.csv results_dir
+
+  sbatch $0 samplesheet.csv results_dir \
       --qcflow-config qcflow.config \
-      --viralrecon-config viralrecon.config
+      --viroflow-config viroflow.config
 
 CHECK HELP WITHOUT SUBMITTING:
   bash $0 --help
@@ -45,10 +45,14 @@ NOTES:
   • SLURM stdout/stderr will be written to:
       slurm-<jobid>.out
       slurm-<jobid>.err
+
+samplesheet example
+    sample,fastq_1,fastq_2,long_fastq
+    sid,r1.fastq.gz,r2.fastq.gz,NA
+
 EOF
 }
 
-# Allow help without sbatch
 case "${1:-}" in
     -h|--help)
         show_help
@@ -59,7 +63,6 @@ esac
 # ==========================================================
 # Required arguments
 # ==========================================================
-
 if [[ $# -lt 2 ]]; then
     echo "ERROR: Missing required arguments"
     show_help
@@ -70,14 +73,12 @@ SAMPLESHEET="$1"
 RESULTS_DIR="$2"
 shift 2
 
-# Optional named arguments
 QCFLOW_CONFIG=""
 VIRALRECON_CONFIG=""
 
 # ==========================================================
-# Parse named options
+# Parse options
 # ==========================================================
-
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --qcflow-config)
@@ -94,7 +95,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "ERROR: Unknown option: $1"
-            show_help
             exit 1
             ;;
     esac
@@ -103,24 +103,14 @@ done
 # ==========================================================
 # Validation
 # ==========================================================
-
-if [[ ! -s "$SAMPLESHEET" ]]; then
-    echo "ERROR: Samplesheet missing or empty: $SAMPLESHEET"
-    exit 1
-fi
+[[ -s "$SAMPLESHEET" ]] || { echo "ERROR: Samplesheet missing: $SAMPLESHEET"; exit 1; }
 
 validate_config() {
     local cfg="$1"
     local name="$2"
 
     if [[ -n "$cfg" ]]; then
-        if [[ ! -f "$cfg" ]]; then
-            echo "ERROR: $name config not found: $cfg"
-            exit 1
-        fi
-        if [[ ! -s "$cfg" ]]; then
-            echo "WARNING: $name config is empty: $cfg"
-        fi
+        [[ -f "$cfg" ]] || { echo "ERROR: $name config not found: $cfg"; exit 1; }
         echo "$(cd "$(dirname "$cfg")" && pwd)/$(basename "$cfg")"
     fi
 }
@@ -128,14 +118,12 @@ validate_config() {
 QCFLOW_CONFIG="$(validate_config "$QCFLOW_CONFIG" "QCflow")"
 VIRALRECON_CONFIG="$(validate_config "$VIRALRECON_CONFIG" "Viralrecon")"
 
-# Resolve absolute paths
 SAMPLESHEET="$(cd "$(dirname "$SAMPLESHEET")" && pwd)/$(basename "$SAMPLESHEET")"
 RESULTS_DIR="$(mkdir -p "$RESULTS_DIR" && cd "$RESULTS_DIR" && pwd)"
 
 # ==========================================================
 # Logging
 # ==========================================================
-
 echo "=================================================="
 echo "SLURM job ID        : ${SLURM_JOB_ID:-N/A}"
 echo "Job name            : ${SLURM_JOB_NAME:-N/A}"
@@ -148,23 +136,73 @@ echo "Results directory   : $RESULTS_DIR"
 echo "Start time          : $(date)"
 echo "=================================================="
 
+prog_base="/nfs/Genomics_DEV/projects/xdong/deve/rsv-analyzer"
 # ==========================================================
-# Run pipeline
+# Conda setup (activate mode, NFS-safe)
 # ==========================================================
 
-PIPELINE="/nfs/Genomics_DEV/projects/xdong/deve/rsv-analyzer/scripts/rsv_illumina_pipeline.sh"
+ENV_NAME="rsv-analyzer-env"
+ENV_FILE="${prog_base}/env/environment.yml"
 
-if [[ ! -x "$PIPELINE" ]]; then
-    echo "ERROR: Pipeline script not executable: $PIPELINE"
+# Detect conda base dynamically
+if command -v conda >/dev/null 2>&1; then
+    CONDA_BASE="$(conda info --base)"
+else
+    echo "[ERROR] conda not found in PATH" >&2
     exit 1
 fi
 
-CMD=(bash "$PIPELINE" "$SAMPLESHEET" "$RESULTS_DIR")
+ENV_PATH="${CONDA_BASE}/envs/${ENV_NAME}"
 
+echo "[INFO] Checking conda environment: $ENV_NAME"
+
+# Initialize conda for non-interactive shell
+if [[ -f "${CONDA_BASE}/etc/profile.d/conda.sh" ]]; then
+    # shellcheck disable=SC1091
+    source "${CONDA_BASE}/etc/profile.d/conda.sh"
+else
+    echo "[ERROR] conda.sh not found in ${CONDA_BASE}" >&2
+    exit 1
+fi
+
+# Create environment if missing (check by path)
+if [[ -d "$ENV_PATH" ]]; then
+    echo "[INFO] Conda env exists: $ENV_PATH"
+else
+    echo "[INFO] Creating conda environment..."
+
+    [[ -f "$ENV_FILE" ]] || { echo "[ERROR] Environment file not found: $ENV_FILE"; exit 1; }
+
+    if ! mamba env create -f "$ENV_FILE" -p "$ENV_PATH"; then
+        echo "[WARN] mamba failed, trying conda..."
+        conda env create -f "$ENV_FILE" -p "$ENV_PATH" || {
+            echo "[ERROR] Failed to create environment: $ENV_NAME"
+            exit 1
+        }
+    fi
+    echo "[INFO] Conda environment created"
+fi
+
+# Activate environment using full path
+if ! conda activate "$ENV_PATH"; then
+    echo "[ERROR] Failed to activate environment: $ENV_PATH"
+    exit 1
+fi
+
+echo "[INFO] Activated conda environment: $ENV_PATH"
+
+# ==========================================================
+# Run pipeline
+# ==========================================================
+PIPELINE="${prog_base}/scripts/rsv_illumina_pipeline.sh"
+
+[[ -f "$PIPELINE" ]] || { echo "ERROR: Pipeline script not found: $PIPELINE"; exit 1; }
+
+CMD=(bash "$PIPELINE" "$SAMPLESHEET" "$RESULTS_DIR")
 [[ -n "$QCFLOW_CONFIG" ]] && CMD+=(--qcflow-config "$QCFLOW_CONFIG")
 [[ -n "$VIRALRECON_CONFIG" ]] && CMD+=(--viralrecon-config "$VIRALRECON_CONFIG")
 
-echo "Running pipeline command:"
+echo "Running pipeline:"
 printf '  %q' "${CMD[@]}"
 echo
 
@@ -174,7 +212,6 @@ exit_code=$?
 # ==========================================================
 # Finish
 # ==========================================================
-
 echo "=================================================="
 echo "Pipeline exit code  : $exit_code"
 echo "End time            : $(date)"

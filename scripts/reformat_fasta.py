@@ -10,7 +10,7 @@ def reformat_stream(in_stream, out_stream):
             parts = header.split()
 
             if len(parts) == 2:
-                out_stream.write(f">{parts[0]}|ref_{parts[1]}\n")
+                out_stream.write(f">{parts[0]}|ref|{parts[1]}\n")
             else:
                 out_stream.write(line)
         else:

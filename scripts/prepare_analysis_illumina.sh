@@ -13,7 +13,7 @@ Required arguments:
   -s <sample_spec>      Sample specification (e.g., "51,56,61" or "5,7,12-18,76")
 
 Optional arguments:
-  -o <output_directory> Directory to store processed files (default: ./nf-fluAB_analysis)
+  -o <output_directory> Directory to store processed files (default: ./rsv-analyzer_analysis)
 
 Examples:
   $0 -i /path/to/Alignment_1 -r RUN2023 -s "51,56,61"

@@ -6,33 +6,31 @@ set -euo pipefail  # Exit on error, undefined vars, and pipe failures
 # ==========================================================
 readonly prod_prog_base="/nfs/APL_Genomics/apps/production"
 readonly deve_prog_base="/nfs/Genomics_DEV/projects/xdong/deve"
-
-readonly path_to_viralassembly="${prod_prog_base}/viralassembly"
+#readonly path_to_viroflow="${deve_prog_base}/nf-viroflow"
+readonly path_to_viroflow="${prod_prog_base}/viroflow_pipeline/nf-viroflow"
 readonly path_to_qc_pipeline="${prod_prog_base}/qcflow_pipeline/nf-qcflow"
+#readonly path_to_covflow="${deve_prog_base}/nf-covflow"
 readonly path_to_covflow="${prod_prog_base}/covflow_pipeline/nf-covflow"
-
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly RSV_PROG_BASE="${SCRIPT_DIR}/.."
 readonly VERSION="$(cat "$SCRIPT_DIR/VERSION" 2>/dev/null || echo "unknown")"
 readonly SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
 readonly RSV_SLURM_CONFIG="${RSV_PROG_BASE}/conf/slurm.config"
-readonly ENV_NAME="virus_env"
-#readonly RESULTS_DIR="results"
 
-# Genome references
-readonly rsvA_ref="${RSV_PROG_BASE}/resource/primerschemes/rsvA/v3/reference.fasta"
-readonly rsvA_bed="${RSV_PROG_BASE}/resource/primerschemes/rsvA/v3/scheme.bed"
-readonly rsvB_ref="${RSV_PROG_BASE}/resource/primerschemes/rsvB/v3/reference.fasta"
-readonly rsvB_bed="${RSV_PROG_BASE}/resource/primerschemes/rsvB/v3/scheme.bed"
+# # virorecon requires 6 columns bed file while align_trim in viralassembly and viroflow requires 7 columns bed file
+readonly rsvA_ref="${RSV_PROG_BASE}/resource/primerschemes_plsa/rsvA/v3/reference.fasta"
+readonly rsvA_bed="${RSV_PROG_BASE}/resource/primerschemes_plsa/rsvA/v3/primer.bed"
+readonly rsvB_ref="${RSV_PROG_BASE}/resource/primerschemes_plsa/rsvB/v3/reference.fasta"
+readonly rsvB_bed="${RSV_PROG_BASE}/resource/primerschemes_plsa/rsvB/v3/primer.bed"
 readonly MASH_DB="${RSV_PROG_BASE}/resource/db/mash_screen/sequences.msh"
 
-# Viralassembly config (default + override)
+# nf-qcflow config (default + override)
 DEFAULT_QCFLOW_CONFIG_FILE="${RSV_PROG_BASE}/conf/qcflow.config"
 QCFLOW_CONFIG_FILE="$DEFAULT_QCFLOW_CONFIG_FILE"
 
-# Viralassembly config (default + override)
-DEFAULT_VIRALASSEMBLY_CONFIG_FILE="${RSV_PROG_BASE}/conf/viralassembly.config"
-VIRALASSEMBLY_CONFIG_FILE="$DEFAULT_VIRALASSEMBLY_CONFIG_FILE"
+# nf-viroflow config (default + override)
+DEFAULT_VIROFLOW_CONFIG_FILE="${RSV_PROG_BASE}/conf/viroflow.config"
+VIROFLOW_CONFIG_FILE="$DEFAULT_VIROFLOW_CONFIG_FILE"
 
 # ==========================================================
 # Help / Version
@@ -46,29 +44,31 @@ show_help() {
 $0 - RSV Nanopore Analysis Pipeline
 
 Usage:
-   bash $0 <samplesheet.csv> <results_dir> [options]
+    bash $0 <samplesheet.csv> <results_dir> [options]
 
 REQUIRED:
-  samplesheet.csv       Input samplesheet (CSV)
-  results_dir           Output directory for pipeline results
+    samplesheet.csv       Input samplesheet (CSV)
+    results_dir           Output directory for pipeline results
 
 Options:
-  -h, --help
-  -v, --version
-  --qcflow-config FILE   Custom qcflow config
-  --viralassembly-config FILE   Custom viralassembly config
+    -h, --help
+    -v, --version
+    --qcflow-config FILE   Custom qcflow config
+    --viroflow-config FILE   Custom viroflow config
 
 EXMPLES:
- sh $0 samplesheet.csv results_2025_01_16
- sh $0 samplesheet.csv results_2025_01_16 \
-      --qcflow-config qcflow.config \
-      --viralassembly-config viralassembly.config
+    bash $0 samplesheet.csv results_dir
+
+    bash $0 samplesheet.csv results_dir \
+        --qcflow-config qcflow.config \
+        --viroflow-config viroflow.config
 
 CHECK HELP WITHOUT RUNNING:
-  bash $0 --help
+    bash $0 --help
 
-NOTES:
-  • This script is intended to be run in a SLURM environment
+CHECK VERSION WITHOUT SUBMITTING:
+    bash $0 --version
+
 
 EOF
 }
@@ -80,6 +80,10 @@ case "${1:-}" in
         show_help
         exit 0
         ;;
+    -v|--version)
+        show_version
+        exit 0
+    ;;
 esac
 
 # ==========================================================
@@ -98,7 +102,7 @@ shift 2
 
 # Optional named arguments
 QCFLOW_CONFIG=""
-VIRALASSEMBLY_CONFIG=""
+VIROFLOW_CONFIG=""
 
 # ==========================================================
 # Parse named options
@@ -110,14 +114,18 @@ while [[ $# -gt 0 ]]; do
             QCFLOW_CONFIG="${2:-}"
             shift 2
             ;;
-        --viralassembly-config)
-            VIRALASSEMBLY_CONFIG="${2:-}"
+        --viroflow-config)
+            VIROFLOW_CONFIG="${2:-}"
             shift 2
             ;;
         -h|--help)
             show_help
             exit 0
             ;;
+        -v|--version)
+            show_version
+            exit 0
+        ;;
         *)
             echo "ERROR: Unknown option: $1"
             show_help
@@ -152,11 +160,11 @@ validate_config() {
 }
 
 QCFLOW_CONFIG="$(validate_config "$QCFLOW_CONFIG" "QCflow")"
-VIRALASSEMBLY_CONFIG="$(validate_config "$VIRALASSEMBLY_CONFIG" "ViralAssembly")"
+VIROFLOW_CONFIG="$(validate_config "$VIROFLOW_CONFIG" "Viroflow")"
 
 # After validation
-if [[ -n "$VIRALASSEMBLY_CONFIG" ]]; then
-    VIRALASSEMBLY_CONFIG_FILE="$VIRALASSEMBLY_CONFIG"
+if [[ -n "$VIROFLOW_CONFIG" ]]; then
+    VIROFLOW_CONFIG_FILE="$VIROFLOW_CONFIG"
 fi
 
 if [[ -n "$QCFLOW_CONFIG" ]]; then
@@ -171,27 +179,35 @@ RESULTS_DIR="$(mkdir -p "$RESULTS_DIR" && cd "$RESULTS_DIR" && pwd)"
 # ==========================================================
 # Logging & helpers
 # ==========================================================
+LOGFILE="$RESULTS_DIR/pipeline.log"
+
 log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$SCRIPT_NAME-$VERSION] $*" >&2
+    local msg="[$(date '+%Y-%m-%d %H:%M:%S')] [$SCRIPT_NAME-$VERSION] $*"
+    echo "$msg" >> "$LOGFILE"
 }
 
 error_exit() {
-    log "ERROR: $1"
+    local msg="[$(date '+%Y-%m-%d %H:%M:%S')] [$SCRIPT_NAME-$VERSION] ERROR: $1"
+    echo "$msg" >&2
     exit "${2:-1}"
 }
 
 run_cmd() {
     log "Running: $*"
-    "$@" || error_exit "Command failed: $*"
-}
 
-check_conda_env() {
-    conda info --envs | awk -v e="$1" '$1==e{f=1}END{exit !f}'
-}
+    {
+        echo "----- CMD START: $(date) -----"
+        echo "$*"
+    } >> "$LOGFILE"
 
-activate_env() {
-    eval "$(conda shell.bash hook)"
-    [[ "${CONDA_DEFAULT_ENV:-}" == "$1" ]] || conda activate "$1"
+    "$@"
+    local status=$?
+
+    {
+        echo "----- CMD END: $(date) [exit=$status] -----"
+    } >> "$LOGFILE"
+
+    [[ $status -eq 0 ]] || error_exit "Command failed: $*"
 }
 
 # ==========================================================
@@ -201,14 +217,7 @@ activate_env() {
 log "Input samplesheet      : $SAMPLESHEET"
 log "Results directory      : $RESULTS_DIR"
 log "QCflow config file     : $QCFLOW_CONFIG_FILE"
-log "Viralassembly config file : $VIRALASSEMBLY_CONFIG_FILE"
-
-# ==========================================================
-# Conda
-# ==========================================================
-check_conda_env "$ENV_NAME" || error_exit "Conda env '$ENV_NAME' not found"
-activate_env "$ENV_NAME"
-
+log "Viroflow config file : $VIROFLOW_CONFIG_FILE"
 
 # ==========================================================
 # STEP 1: Prepare samplesheet
@@ -234,6 +243,7 @@ run_cmd nextflow run "${path_to_qc_pipeline}/main.nf" \
 
 # ==========================================================
 # STEP 3: RSV A/B classification
+# produced samplesheet "sample,fastq_1,fastq_2"
 # ==========================================================
 log "=== STEP 3: RSV A/B classification ==="
 run_cmd python "$SCRIPT_DIR/screen_rsv_mash.py" \
@@ -252,37 +262,67 @@ process_virus() {
     local ss="$RESULTS_DIR/samplesheet_${virus}.csv"
     [[ -s "$ss" ]] || { log "No $virus samples found, skipping"; return; }
 
-    viralassembly_outdir="$RESULTS_DIR/$virus/viralassembly"
+    # # Declare associative arrays
+    # declare -A ref_plsa=(
+    #     [rsvA]="$rsvA_ref"
+    #     [rsvB]="$rsvB_ref"
+    # )
+
+    # declare -A bed_plsa=(
+    #     [rsvA]="$rsvA_bed"
+    #     [rsvB]="$rsvB_bed"
+    # )
+
+    # # Lookup
+    # ref="${ref_plsa[$virus]}"
+    # bed="${bed_plsa[$virus]}"
+
+    # Validate
+    # if [[ -z "$ref" || -z "$bed" ]]; then
+    #     echo "ERROR: Invalid virus type or undefined variables: $virus"
+    #     exit 1
+    # fi
+
+    # Run
+    run_cmd python "$SCRIPT_DIR/build_samplesheet_for_viroflow.py" \
+        -i "$RESULTS_DIR/samplesheet_${virus}.csv" \
+        --ref "$ref" \
+        --bed "$bed" \
+        -o "$RESULTS_DIR/samplesheet_${virus}_to_viroflow.csv"
+
+
+
+    viroflow_outdir="$RESULTS_DIR/$virus/viroflow"
 
     log "=== Processing $virus ==="
 
     # Viral assembly
-    run_cmd nextflow run "${path_to_viralassembly}/main.nf" \
+    run_cmd nextflow run "${path_to_viroflow}/main.nf" \
         -profile singularity,slurm \
         -c "$RSV_SLURM_CONFIG" \
-        -c "$VIRALASSEMBLY_CONFIG_FILE" \
-        --input "$ss" \
-        --outdir "${viralassembly_outdir}" \
-        --scheme "$virus" \
+        -c "$VIROFLOW_CONFIG_FILE" \
+        --input "$RESULTS_DIR/samplesheet_${virus}_to_viroflow.csv" \
+        --outdir "${viroflow_outdir}" \
+        --input_type amplicon \
         -resume
 
-    run_cmd cat "${viralassembly_outdir}/consensus/"*.fasta |
-        python "$SCRIPT_DIR/reformat_fasta.py" \
-        -o "${viralassembly_outdir}/consensus/all_consensus.${virus}.fasta"
+    run_cmd cat "${viroflow_outdir}/consensus/"*.filtered_consensus.fasta \
+        > "${viroflow_outdir}/consensus/all_consensus.${virus}.fasta"
 
     # Consensus stats
     #mkdir -p "$RESULTS_DIR/$virus/consensus"
     run_cmd  python "$SCRIPT_DIR/fasta_stats.py" \
-        "${viralassembly_outdir}/consensus/all_consensus.${virus}.fasta" \
-        -o "${viralassembly_outdir}/consensus/all_consensus.${virus}_stats.tsv"
+        "${viroflow_outdir}/consensus/all_consensus.${virus}.fasta" \
+        -o "${viroflow_outdir}/consensus/all_consensus.${virus}_stats.tsv"
 
     # Prepare for nf-covflow
-    mkdir -p "${viralassembly_outdir}/bam_to_covflow"
-    cp "${viralassembly_outdir}/bam/"*.primertrimmed.rg.sorted.bam* "${viralassembly_outdir}/bam_to_covflow" || true
+    run_cmd mkdir -p "${viroflow_outdir}/bam_to_covflow"
+    run_cmd cp "${viroflow_outdir}/bam/"*.primertrimmed.sorted.bam* \
+        "${viroflow_outdir}/bam_to_covflow" || true
 
     # Build covflow samplesheet
     run_cmd python "$SCRIPT_DIR/build_samplesheet_for_covflow.py" \
-        --input_dir "${viralassembly_outdir}/bam_to_covflow" \
+        --input_dir "${viroflow_outdir}/bam_to_covflow" \
         --ref_fasta "$ref" \
         --bed_file "$bed" \
         -o "$RESULTS_DIR/samplesheet_to_covflow_${virus}.csv"
@@ -301,8 +341,8 @@ process_virus() {
       --name "nextstrain/rsv/${last_char,,}" \
       --output-dir "$nextclade_db"
 
-    if ls "${viralassembly_outdir}/consensus/"*.fasta >/dev/null 2>&1; then
-        run_cmd nextclade run "${viralassembly_outdir}/consensus/"*.fasta \
+    if ls "${viroflow_outdir}/consensus/"*.fasta >/dev/null 2>&1; then
+        run_cmd nextclade run "${viroflow_outdir}/consensus/"*.fasta \
             --input-dataset "$nextclade_db" \
             --output-all "$RESULTS_DIR/$virus/nextclade"
     else
@@ -313,31 +353,52 @@ process_virus() {
 process_virus rsvA "$rsvA_ref" "$rsvA_bed"
 process_virus rsvB "$rsvB_ref" "$rsvB_bed"
 
+
 # ==========================================================
 # STEP 5: Final report
 # ==========================================================
 log "=== Generating final summary report ==="
 final_report_dir="${RESULTS_DIR}/summary_report"
-mkdir -p "$final_report_dir"
+run_cmd mkdir -p "$final_report_dir"
+
 
 for virus in rsvA rsvB; do
-    mkdir -p "${final_report_dir}/${virus}"
-    viralassembly_outdir="$RESULTS_DIR/$virus/viralassembly"
+    run_cmd mkdir -p "${final_report_dir}/${virus}"
+    run_cmd mkdir -p "$final_report_dir/$virus/nextclade"
+
+    viroflow_outdir="$RESULTS_DIR/$virus/viroflow"
+
     #cp "$RESULTS_DIR/samplesheet_${virus}.csv" "${final_report_dir}/"
-    cp "${viralassembly_outdir}/consensus/"all_consensus.* "${final_report_dir}/${virus}/" || true
-    cp "${viralassembly_outdir}/bam/"*.primertrimmed.rg.sorted.bam* "${final_report_dir}/${virus}/" || true
-    cp "$RESULTS_DIR/$virus/nextclade/"* "${final_report_dir}/${virus}/" || true
-    cp -r "$RESULTS_DIR/$virus/nf-covflow/report/"* "${final_report_dir}/${virus}/" || true
+    run_cmd cp "${viroflow_outdir}/consensus/"all_consensus.* \
+        "${final_report_dir}/${virus}/" || true
+
+    run_cmd cp "${viroflow_outdir}/bam/"*.primertrimmed.sorted.bam* \
+        "${final_report_dir}/${virus}/" || true
+
+    for ext in csv gff json ndjson tsv nwk tbl; do
+        file="$RESULTS_DIR/$virus/nextclade/nextclade.$ext"
+        [ -f "$file" ] && cp "$file" "$final_report_dir/$virus/nextclade"
+    done
+
+    run_cmd cp -r "$RESULTS_DIR/$virus/nf-covflow/report/"* \
+        "${final_report_dir}/${virus}/" || true
 done
 
 # Copy QC reports
-cp "$RESULTS_DIR/nf-qcflow/report/reads_nanopore.qc_report.csv" "$final_report_dir/" || true
-cp "$RESULTS_DIR/nf-qcflow/report/reads_nanopore.topmatches.csv" "$final_report_dir/" || true
-cp -r "$RESULTS_DIR/mash_screen" "$final_report_dir/" || true
+run_cmd cp "$RESULTS_DIR/nf-qcflow/report/reads_nanopore.qc_report.csv" \
+    "$final_report_dir/" || true
 
-# Generate master summary
-conda deactivate || true
-cd "$final_report_dir" || error_exit "Failed to cd to $final_report_dir"
+run_cmd cp "$RESULTS_DIR/nf-qcflow/report/reads_nanopore.topmatches.csv" \
+    "$final_report_dir/" || true
+
+run_cmd cp -r "$RESULTS_DIR/mash_screen" "$final_report_dir/" || true
+
+# ==========================================================
+# STEP 6: make_summary_report
+# ==========================================================
+
+run_cmd cd "$final_report_dir" || error_exit "Failed to cd to $final_report_dir"
+
 run_cmd python "$SCRIPT_DIR/make_summary_report.py" \
     --qc reads_nanopore.qc_report.csv \
     --consensusA rsvA/all_consensus.rsvA_stats.tsv \

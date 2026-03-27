@@ -1,7 +1,6 @@
 import csv
 import re
 import sys
-from collections import defaultdict
 
 def parse_amplicon_id(primer_name):
     match = re.search(r'_(\d+)_', primer_name)
